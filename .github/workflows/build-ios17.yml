@@ -5,6 +5,9 @@ on:
   push:
     branches: [ios17-lockdown]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-26
@@ -50,3 +53,22 @@ jobs:
           name: WrapPin-Standard-iOS17-unsigned
           path: ${{ runner.temp }}/ipa/*.ipa
           if-no-files-found: error
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IPA_DIR: ${{ runner.temp }}/ipa
+        run: |
+          TAG="ios17-build-${GITHUB_RUN_NUMBER}"
+          SUBJECT="$(git log -1 --pretty=%s)"
+          {
+            echo "iOS 17.4+ build from \`${GITHUB_SHA::7}\`: ${SUBJECT}"
+            echo
+            echo "Install the .ipa with SideStore (choose the file from Files)."
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" "$IPA_DIR"/*.ipa \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "WrapPin iOS 17 · build ${GITHUB_RUN_NUMBER}" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --latest
