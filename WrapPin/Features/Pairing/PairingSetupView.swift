@@ -8,13 +8,19 @@ struct PairingSetupView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var isImporting = false
     @State private var isConfirmingRemoval = false
+    @State private var ddiIsReady = DeveloperDiskImageStore.shared.isDownloaded
+    @State private var ddiProgress: Double?
+    @State private var ddiError: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
                     statusCard
-                    if !DevicePairingSupport.supportsOnDevicePairing {
+                    if DevicePairingSupport.usesLockdownTunnel {
+                        lockdownPairingCard
+                        developerDiskImageCard
+                    } else if !DevicePairingSupport.supportsOnDevicePairing {
                         computerPairingCard
                     }
                     requirementsCard
@@ -155,8 +161,14 @@ struct PairingSetupView: View {
                     }
                     Task { await appModel.importPairingRecord(data: Data(text.utf8)) }
                 } label: {
-                    Label("Paste RPPairing from Clipboard", systemImage: "doc.on.clipboard")
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                    Group {
+                        if DevicePairingSupport.usesLockdownTunnel {
+                            Label("Paste Pairing File from Clipboard", systemImage: "doc.on.clipboard")
+                        } else {
+                            Label("Paste RPPairing from Clipboard", systemImage: "doc.on.clipboard")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderless)
                 .disabled(isBusy)
@@ -168,8 +180,14 @@ struct PairingSetupView: View {
         Button {
             isImporting = true
         } label: {
-            Label("Import RPPairing File", systemImage: "doc.badge.plus")
-                .frame(maxWidth: .infinity, minHeight: 44)
+            Group {
+                if DevicePairingSupport.usesLockdownTunnel {
+                    Label("Import Pairing File", systemImage: "doc.badge.plus")
+                } else {
+                    Label("Import RPPairing File", systemImage: "doc.badge.plus")
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
         }
         .disabled(isBusy)
     }
@@ -188,6 +206,83 @@ struct PairingSetupView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// iOS 17.4–17.x: lockdown pairing file instead of RPPairing.
+    private var lockdownPairingCard: some View {
+        setupCard {
+            Text("iOS 17: create a Lockdown pairing file")
+                .font(.headline)
+            if !DevicePairingSupport.isLockdownTunnelAvailable(on: ProcessInfo.processInfo.operatingSystemVersion) {
+                Label("iOS 17.4 or later is required. Update this iPhone in Settings first.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            requirementRow(number: "1", text: String(localized: "Download idevice_pair on your Mac, Windows or Linux computer."))
+            Link("Download idevice_pair", destination: URL(string: "https://github.com/jkcoxson/idevice_pair/releases/latest")!)
+                .frame(minHeight: 44, alignment: .leading)
+            requirementRow(number: "2", text: String(localized: "Connect this device by USB, unlock it and tap Trust when asked."))
+            requirementRow(number: "3", text: String(localized: "Select this device in idevice_pair and create a Lockdown pairing file (.mobiledevicepairing)."))
+            requirementRow(number: "4", text: String(localized: "Transfer the file to this device, save it in Files, then import it above."))
+            Text("On iOS 17, the .mobiledevicepairing file you already use for SideStore works too. RPPairing files are for iOS 18 and later.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// iOS 17 forgets the Developer Disk Image on every reboot; WrapPin mounts
+    /// this downloaded copy automatically when a session starts.
+    private var developerDiskImageCard: some View {
+        setupCard {
+            Label("Developer Disk Image", systemImage: ddiIsReady ? "checkmark.seal.fill" : "externaldrive.badge.plus")
+                .font(.headline)
+                .foregroundStyle(ddiIsReady ? Color.green : Color.primary)
+            Text("iOS 17 needs Apple's Developer Disk Image for location simulation. WrapPin downloads it once (about 17 MB) and mounts it automatically, including after a restart.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let ddiProgress {
+                ProgressView(value: ddiProgress)
+            } else {
+                Button {
+                    downloadDeveloperDiskImage()
+                } label: {
+                    Group {
+                        if ddiIsReady {
+                            Label("Download Again", systemImage: "arrow.down.circle")
+                        } else {
+                            Label("Download Developer Disk Image", systemImage: "arrow.down.circle")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+            }
+            if let ddiError {
+                Text(ddiError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func downloadDeveloperDiskImage() {
+        ddiError = nil
+        ddiProgress = 0
+        Task {
+            do {
+                try await DeveloperDiskImageStore.shared.download { value in
+                    Task { @MainActor in ddiProgress = value }
+                }
+                ddiIsReady = DeveloperDiskImageStore.shared.isDownloaded
+            } catch {
+                ddiError = error.localizedDescription
+            }
+            ddiProgress = nil
         }
     }
 
@@ -261,7 +356,9 @@ struct PairingSetupView: View {
 
             requirementRow(
                 number: "1",
-                text: DevicePairingSupport.supportsOnDevicePairing
+                text: DevicePairingSupport.usesLockdownTunnel
+                    ? String(localized: "Import this device's .mobiledevicepairing file and download the Developer Disk Image.")
+                    : DevicePairingSupport.supportsOnDevicePairing
                     ? String(localized: "Pair this iPhone here, or import its existing RPPairing file.")
                     : String(localized: "Import this device's RPPairing file created with idevice_pair on your computer.")
             )
@@ -461,6 +558,9 @@ struct PairingSetupView: View {
         case .importing:
             return String(localized: "Validating the record and its keys.")
         case .notPaired:
+            if DevicePairingSupport.usesLockdownTunnel {
+                return String(localized: "On iOS 17, import a Lockdown pairing file (.mobiledevicepairing) created on your computer.")
+            }
             if !DevicePairingSupport.supportsOnDevicePairing {
                 return String(localized: "On iOS 18–26, create an RPPairing file with idevice_pair on your computer, then import it here.")
             }

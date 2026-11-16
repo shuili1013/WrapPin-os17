@@ -1,0 +1,52 @@
+name: Build iOS 17 Standard IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ios17-lockdown]
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install Rust iOS targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+      - name: Rebuild pairing engine (with iOS 17 lockdown path)
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        run: |
+          mv Frameworks/WrapPinPairingFFI.xcframework /tmp/old-xcframework
+          zsh scripts/build-pairing-engine.sh
+
+      - name: Offline checks
+        run: |
+          python3 scripts/check-localization.py
+          python3 scripts/test-failure-stages.py
+          xcrun swiftc -parse-as-library scripts/test-pairing-import.swift \
+            WrapPin/Services/Pairing/PairingService.swift \
+            WrapPin/Services/Pairing/DevicePairingSupport.swift -o /tmp/pairing-check
+          /tmp/pairing-check
+
+      - name: Package unsigned Standard IPA
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}/ipa
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+          zsh scripts/package-ipa.sh standard
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WrapPin-Standard-iOS17-unsigned
+          path: ${{ runner.temp }}/ipa/*.ipa
+          if-no-files-found: error

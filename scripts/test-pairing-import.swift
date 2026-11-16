@@ -74,6 +74,46 @@ struct PairingImportCheck {
         } catch let error as PairingServiceError {
             precondition(error == .lockdownRecord)
         }
-        print("Pairing import and iOS 18–26/27 capability checks passed; no Keychain writes made.")
+        // iOS 17.4–17.x uses a lockdown pairing file and the CoreDeviceProxy tunnel.
+        for minor in [0, 4, 6] {
+            let ios17 = OperatingSystemVersion(majorVersion: 17, minorVersion: minor, patchVersion: 1)
+            precondition(DevicePairingSupport.usesLockdownTunnel(on: ios17))
+            precondition(!DevicePairingSupport.supportsOnDevicePairing(on: ios17))
+            precondition(DevicePairingSupport.isLockdownTunnelAvailable(on: ios17) == (minor >= 4))
+        }
+        for major in [18, 26, 27] {
+            precondition(!DevicePairingSupport.usesLockdownTunnel(
+                on: .init(majorVersion: major, minorVersion: 0, patchVersion: 0)))
+        }
+        let lockdown: [String: Any] = [
+            "HostID": "SYNTHETIC-HOST",
+            "SystemBUID": "SYNTHETIC-BUID",
+            "HostCertificate": Data(repeating: 1, count: 64),
+            "HostPrivateKey": Data(repeating: 2, count: 64),
+            "DeviceCertificate": Data(repeating: 3, count: 64),
+            "RootCertificate": Data(repeating: 4, count: 64),
+            "RootPrivateKey": Data(repeating: 5, count: 64),
+            "UDID": "00008020-SYNTHETIC"
+        ]
+        let lockdownSummary = try SecurePairingService.validate(
+            encode(lockdown), importedAt: date, acceptsLockdownRecord: true)
+        precondition(lockdownSummary.identifier == "00008020-SYNTHETIC")
+        func rejectOnIOS17(_ data: Data, as expected: PairingServiceError) {
+            do {
+                _ = try SecurePairingService.validate(data, importedAt: date, acceptsLockdownRecord: true)
+                preconditionFailure("Invalid iOS 17 pairing record accepted")
+            } catch let error as PairingServiceError {
+                precondition(error == expected)
+            } catch {
+                preconditionFailure("Unexpected validation error")
+            }
+        }
+        var incomplete = lockdown
+        incomplete.removeValue(forKey: "HostPrivateKey")
+        rejectOnIOS17(try encode(incomplete), as: .incompleteLockdownRecord)
+        rejectOnIOS17(xml, as: .remoteRecordOnIOS17)
+        reject(try encode(lockdown), as: .lockdownRecord)
+
+        print("Pairing import and iOS 17/18–26/27 capability checks passed; no Keychain writes made.")
     }
 }

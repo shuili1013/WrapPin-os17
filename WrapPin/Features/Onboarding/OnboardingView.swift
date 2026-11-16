@@ -317,10 +317,14 @@ private struct OnboardingPage {
                 ),
                 OnboardingRequirement(
                     symbol: DevicePairingSupport.supportsOnDevicePairing ? "iphone.and.arrow.forward" : "doc.badge.plus",
-                    title: DevicePairingSupport.supportsOnDevicePairing
+                    title: DevicePairingSupport.usesLockdownTunnel
+                        ? String(localized: "Import a pairing file")
+                        : DevicePairingSupport.supportsOnDevicePairing
                         ? String(localized: "Pair this device")
                         : String(localized: "Import an RPPairing file"),
-                    message: DevicePairingSupport.supportsOnDevicePairing
+                    message: DevicePairingSupport.usesLockdownTunnel
+                        ? String(localized: "On iOS 17, use idevice_pair on a computer once to create a Lockdown pairing file (.mobiledevicepairing), then download the Developer Disk Image on the next screen.")
+                        : DevicePairingSupport.supportsOnDevicePairing
                         ? String(localized: "The next screen will guide you through the private on-device pairing.")
                         : String(localized: "On iOS 18–26, use idevice_pair on a computer once to create a Remote pairing file. The next screen explains how to import it.")
                 )

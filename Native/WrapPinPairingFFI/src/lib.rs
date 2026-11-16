@@ -1,3 +1,5 @@
+mod lockdown_path;
+
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -499,6 +501,111 @@ pub unsafe extern "C" fn wp_location_session_run(
     }
 }
 
+/// iOS 17.4–17.x: runs a location session through lockdown's CoreDeviceProxy
+/// using a classic `.mobiledevicepairing` file instead of an RPPairing record.
+/// `ddi_directory` holds Image.dmg, Image.dmg.trustcache and
+/// BuildManifest.plist; it may be null when the image is already mounted.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wp_lockdown_location_session_run(
+    session: *mut LocationSession,
+    pairing_file: *const u8,
+    pairing_file_length: usize,
+    peer_address: *const c_char,
+    ddi_directory: *const c_char,
+    latitude: f64,
+    longitude: f64,
+    started_callback: LocationStartedCallback,
+    context: *mut c_void,
+    result: *mut LocationResult,
+) -> i32 {
+    if session.is_null() || result.is_null() || pairing_file.is_null() || pairing_file_length == 0 {
+        return 2;
+    }
+
+    unsafe {
+        (*result).error_message = ptr::null_mut();
+        (*result).error_stage = LocationStage::Unknown as i32;
+        (*result).error_is_recoverable = 0;
+        (*result).error_detail = ptr::null_mut();
+    }
+
+    let session = unsafe { &*session };
+    session.cancelled.store(false, Ordering::Release);
+    let pairing_file =
+        unsafe { std::slice::from_raw_parts(pairing_file, pairing_file_length).to_vec() };
+    let peer_address = unsafe { optional_c_string(peer_address, "10.7.0.1") };
+    let ddi_directory = unsafe { lockdown_path::optional_path(ddi_directory) };
+    let cancellation = Arc::clone(&session.cancelled);
+    let coordinates = Arc::clone(&session.coordinates);
+    if let Ok(mut current) = coordinates.lock() {
+        *current = LocationCoordinates {
+            latitude,
+            longitude,
+        };
+    }
+    let callback_context = context as usize;
+
+    let execution = catch_unwind(AssertUnwindSafe(|| {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(3)
+            .enable_all()
+            .build()
+            .map_err(|_| {
+                LocationError::new(
+                    LocationStage::LocationEngine,
+                    "WrapPin could not start its device session.",
+                )
+            })?;
+
+        runtime.block_on(lockdown_path::run_lockdown_location_session(
+            lockdown_path::LockdownSessionInput {
+                pairing_file,
+                peer_address,
+                ddi_directory,
+                coordinates,
+                started_callback,
+                callback_context,
+                cancellation,
+            },
+        ))
+    }));
+
+    match execution {
+        Ok(Ok(())) => 0,
+        Ok(Err(error)) => {
+            unsafe { write_location_error(&mut *result, error) };
+            1
+        }
+        Err(_) => {
+            unsafe {
+                write_location_error(
+                    &mut *result,
+                    LocationError::new(
+                        LocationStage::LocationEngine,
+                        "The location session stopped unexpectedly.",
+                    ),
+                );
+            }
+            1
+        }
+    }
+}
+
+/// Returns 1 when the bytes parse as a lockdown pairing file
+/// (`.mobiledevicepairing`), 0 otherwise. Used to validate imports.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wp_lockdown_pairing_file_is_valid(
+    pairing_file: *const u8,
+    pairing_file_length: usize,
+) -> i32 {
+    if pairing_file.is_null() || pairing_file_length == 0 {
+        return 0;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(pairing_file, pairing_file_length) };
+    catch_unwind(|| idevice::pairing_file::PairingFile::from_bytes(bytes).is_ok()).unwrap_or(false)
+        as i32
+}
+
 unsafe fn write_location_error(result: &mut LocationResult, error: LocationError) {
     result.error_message = owned_c_string(error.message);
     result.error_stage = error.stage as i32;
@@ -607,7 +714,7 @@ async fn run_location_session(
 ) -> Result<(), LocationError> {
     use LocationStage as Stage;
 
-    let mut applied_coordinates = current_coordinates(&coordinates)?;
+    let applied_coordinates = current_coordinates(&coordinates)?;
     if remote_pairing_port == 0 || service_identifier.is_empty() || auth_tag.is_empty() {
         return Err(LocationError::new(
             Stage::Discovery,
@@ -737,7 +844,33 @@ async fn run_location_session(
     })?;
     let rsd_port = tunnel.info.server_rsd_port;
     let adapter = tcp::adapter::Adapter::new(Box::new(tunnel.into_inner()), client_ip, server_ip);
-    let mut handle = adapter.to_async_handle();
+    let handle = adapter.to_async_handle();
+
+    drive_location_over_rsd(
+        handle,
+        rsd_port,
+        applied_coordinates,
+        coordinates,
+        started_callback,
+        callback_context,
+        cancellation,
+    )
+    .await
+}
+
+/// Everything after a trusted tunnel exists: RSD handshake, DVT location
+/// service, the write loop and the final clear. Shared by the iOS 18+ remote
+/// pairing path and the iOS 17.4+ lockdown CoreDeviceProxy path.
+async fn drive_location_over_rsd(
+    mut handle: tcp::handle::AdapterHandle,
+    rsd_port: u16,
+    mut applied_coordinates: LocationCoordinates,
+    coordinates: Arc<Mutex<LocationCoordinates>>,
+    started_callback: LocationStartedCallback,
+    callback_context: usize,
+    cancellation: Arc<AtomicBool>,
+) -> Result<(), LocationError> {
+    use LocationStage as Stage;
 
     let rsd_stream = connection_step(
         &cancellation,

@@ -120,6 +120,27 @@ int32_t wp_location_session_run(
 
 void wp_location_result_destroy(WPLocationResult *result);
 
+/* iOS 17.4–17.x: lockdown CoreDeviceProxy path with a .mobiledevicepairing file.
+   ddi_directory contains Image.dmg, Image.dmg.trustcache and BuildManifest.plist;
+   it may be NULL when the Developer Disk Image is already mounted. */
+int32_t wp_lockdown_location_session_run(
+    WPLocationSession *session,
+    const uint8_t *pairing_file,
+    size_t pairing_file_length,
+    const char *peer_address,
+    const char *ddi_directory,
+    double latitude,
+    double longitude,
+    WPLocationStartedCallback started_callback,
+    void *context,
+    WPLocationResult *result
+);
+
+int32_t wp_lockdown_pairing_file_is_valid(
+    const uint8_t *pairing_file,
+    size_t pairing_file_length
+);
+
 void wp_location_session_destroy(WPLocationSession *session);
 
 #ifdef __cplusplus

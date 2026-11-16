@@ -85,6 +85,7 @@ final class LocalDeviceSessionCoordinator: NSObject {
     }
 
     private static let localDevVPNPeerAddress = "10.7.0.1"
+    private static let lockdownPort: UInt16 = 62078
     private static let minimumRestorationDisplayDuration: TimeInterval = 1.2
 
     private(set) var phase: DeviceSessionPhase = .idle {
@@ -496,8 +497,22 @@ final class LocalDeviceSessionCoordinator: NSObject {
         isDiscoveringServices = true
         phase = .discovering
         connectionStage = .discoveringDevice
-        browser.delegate = self
-        browser.searchForServices(ofType: "_remotepairing._tcp.", inDomain: "local.")
+        if DevicePairingSupport.usesLockdownTunnel {
+            // iOS 17 announces no _remotepairing service. Lockdown listens on
+            // 62078 behind the device tunnel; probing it confirms the tunnel.
+            connectionStage = .verifyingDevice
+            verifyServiceIsReachable(RemotePairingService(
+                host: Self.localDevVPNPeerAddress,
+                port: Self.lockdownPort,
+                identifier: "lockdown",
+                authTag: "lockdown",
+                endpointSource: .fallback,
+                fallbackHost: nil
+            ))
+        } else {
+            browser.delegate = self
+            browser.searchForServices(ofType: "_remotepairing._tcp.", inDomain: "local.")
+        }
 
         if showConnectionHelpIfUnavailable {
             mobileDataGuidanceDelay = Task { @MainActor [weak self] in
@@ -648,6 +663,8 @@ final class LocalDeviceSessionCoordinator: NSObject {
         let pairingRecord = pendingSession.pairingRecord
         let simulationCoordinates = pendingSession.simulationCoordinates
         let peerAddressString = resolvedService.host
+        let usesLockdownTunnel = DevicePairingSupport.usesLockdownTunnel
+        let ddiDirectory = DeveloperDiskImageStore.shared.directoryIfReady
 
         DispatchQueue.global(qos: .userInitiated).async {
             guard
@@ -659,6 +676,25 @@ final class LocalDeviceSessionCoordinator: NSObject {
             let returnCode = pairingRecord.withUnsafeBytes { recordBytes in
                 guard let recordBaseAddress = recordBytes.bindMemory(to: UInt8.self).baseAddress else {
                     return Int32(-1)
+                }
+
+                if usesLockdownTunnel {
+                    return peerAddressString.withCString { peerAddress in
+                        withOptionalCString(ddiDirectory) { ddiPath in
+                            wp_lockdown_location_session_run(
+                                session,
+                                recordBaseAddress,
+                                pairingRecord.count,
+                                peerAddress,
+                                ddiPath,
+                                simulationCoordinates.latitude,
+                                simulationCoordinates.longitude,
+                                locationStartedCallback,
+                                context,
+                                &result
+                            )
+                        }
+                    }
                 }
 
                 return peerAddressString.withCString { peerAddress in
@@ -1263,6 +1299,14 @@ extension LocalDeviceSessionCoordinator: NetServiceBrowserDelegate, NetServiceDe
             useResolvedService(sender)
         }
     }
+}
+
+private func withOptionalCString<Result>(
+    _ value: String?,
+    _ body: (UnsafePointer<CChar>?) -> Result
+) -> Result {
+    guard let value else { return body(nil) }
+    return value.withCString { body($0) }
 }
 
 private struct NativeLocationFailure: Sendable {

@@ -11,8 +11,8 @@ name = "wrappin_pairing_ffi"
 crate-type = ["staticlib"]
 
 [dependencies]
-idevice = { git = "https://github.com/jkcoxson/idevice.git", rev = "2bc58aaea40c9ced0167c8e7b512ee13c34c760f", default-features = false, features = ["dvt", "location_simulation", "remote_pairing", "rsd", "rustcrypto", "tcp", "tunnel_tcp_stack"] }
-tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "macros"] }
+idevice = { git = "https://github.com/jkcoxson/idevice.git", rev = "2bc58aaea40c9ced0167c8e7b512ee13c34c760f", default-features = false, features = ["core_device_proxy", "dvt", "heartbeat", "location_simulation", "mobile_image_mounter", "remote_pairing", "rsd", "rustcrypto", "tcp", "tss", "tunnel_tcp_stack"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "macros", "fs"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }

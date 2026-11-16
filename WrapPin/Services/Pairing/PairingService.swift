@@ -125,7 +125,11 @@ actor SecurePairingService: PairingService {
         }
     }
 
-    static func validate(_ data: Data, importedAt: Date) throws -> PairingRecordSummary {
+    static func validate(
+        _ data: Data,
+        importedAt: Date,
+        acceptsLockdownRecord: Bool = DevicePairingSupport.usesLockdownTunnel
+    ) throws -> PairingRecordSummary {
         let propertyList: Any
         do {
             propertyList = try PropertyListSerialization.propertyList(from: data, format: nil)
@@ -139,7 +143,15 @@ actor SecurePairingService: PairingService {
 
         if dictionary["public_key"] == nil, dictionary["private_key"] == nil,
            dictionary["HostID"] != nil || dictionary["HostCertificate"] != nil {
-            throw PairingServiceError.lockdownRecord
+            guard acceptsLockdownRecord else {
+                throw PairingServiceError.lockdownRecord
+            }
+            return try validateLockdownRecord(dictionary, importedAt: importedAt)
+        }
+
+        if acceptsLockdownRecord {
+            // iOS 17 cannot use an RPPairing record; say so instead of storing it.
+            throw PairingServiceError.remoteRecordOnIOS17
         }
 
         guard
@@ -183,6 +195,38 @@ actor SecurePairingService: PairingService {
     }
 }
 
+extension SecurePairingService {
+    /// iOS 17: a classic lockdown pairing file (.mobiledevicepairing / .plist),
+    /// created by idevice_pair, SideStore's pairing tool or Jitterbug.
+    static func validateLockdownRecord(
+        _ dictionary: [String: Any],
+        importedAt: Date
+    ) throws -> PairingRecordSummary {
+        guard
+            let hostID = dictionary["HostID"] as? String,
+            !hostID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            let hostCertificate = dictionary["HostCertificate"] as? Data,
+            !hostCertificate.isEmpty,
+            let hostPrivateKey = dictionary["HostPrivateKey"] as? Data,
+            !hostPrivateKey.isEmpty,
+            dictionary["DeviceCertificate"] is Data,
+            dictionary["RootCertificate"] is Data
+        else {
+            throw PairingServiceError.incompleteLockdownRecord
+        }
+
+        let digest = SHA256.hash(data: hostCertificate)
+        let fingerprint = digest.prefix(6).map { String(format: "%02X", $0) }.joined(separator: ":")
+        let identifier = (dictionary["UDID"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? hostID
+
+        return PairingRecordSummary(
+            identifier: identifier,
+            fingerprint: fingerprint,
+            importedAt: importedAt
+        )
+    }
+}
+
 private struct StoredPairingRecord: Codable {
     let data: Data
     let importedAt: Date
@@ -198,6 +242,8 @@ enum PairingServiceError: LocalizedError, Equatable {
     case invalidHostIdentity
     case corruptStoredRecord
     case keychain(OSStatus)
+    case incompleteLockdownRecord
+    case remoteRecordOnIOS17
 
     var errorDescription: String? {
         switch self {
@@ -215,6 +261,10 @@ enum PairingServiceError: LocalizedError, Equatable {
             String(localized: "The generated pairing identity was not valid.")
         case .corruptStoredRecord:
             String(localized: "The stored pairing record could not be read.")
+        case .incompleteLockdownRecord:
+            String(localized: "This pairing file is incomplete. Create a new .mobiledevicepairing file for this iPhone with your computer and import it again.")
+        case .remoteRecordOnIOS17:
+            String(localized: "On iOS 17, WrapPin needs a Lockdown pairing file (.mobiledevicepairing), not an RPPairing file. Create one with idevice_pair (Lockdown) or the pairing file you already use for SideStore.")
         case .keychain(let status):
             String(format: NSLocalizedString("The pairing record could not be stored securely (Keychain error %d).", comment: ""), status)
         }
