@@ -34,7 +34,8 @@ extension ReleaseUpdateStatus {
 
 struct ReleaseUpdateChecker {
     private static let latestReleaseURL = URL(
-        string: "https://api.github.com/repos/suversal/WrapPin/releases/latest"
+        // iOS 17 fork: upstream releases require iOS 18, so check this fork.
+        string: "https://api.github.com/repos/shuili1013/WrapPin-os17/releases/latest"
     )!
 
     func latestRelease() async throws -> PublishedRelease {
@@ -133,9 +134,13 @@ final class ReleaseUpdateModel {
 
         do {
             let release = try await ReleaseUpdateChecker().latestRelease()
-            let installedVersion = Bundle.main.object(
+            // Fork releases are tagged v<version>.<build>, e.g. v1.0.22.77, so
+            // the build number decides between packages of the same version.
+            let shortVersion = Bundle.main.object(
                 forInfoDictionaryKey: "CFBundleShortVersionString"
             ) as? String ?? "0"
+            let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+            let installedVersion = "\(shortVersion).\(build)"
             if VersionComparison.isRemoteVersionNewer(release.version, than: installedVersion) {
                 status = .updateAvailable(release)
             } else if VersionComparison.isRemoteVersionNewer(installedVersion, than: release.version) {

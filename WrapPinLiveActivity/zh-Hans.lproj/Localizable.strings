@@ -1,3 +1,9 @@
 "Simulating location" = "正在模拟定位";
 "Reconnecting…" = "正在重新连接…";
 "Elapsed" = "已持续";
+"Walking to" = "步行前往";
+"Driving to" = "驾车前往";
+"Arrived" = "已到达";
+"Paused" = "已暂停";
+"left" = "剩余";
+"Almost there" = "即将到达";

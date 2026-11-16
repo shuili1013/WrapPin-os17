@@ -13,6 +13,24 @@ struct WrapPinActivityAttributes: ActivityAttributes {
         case reconnecting
     }
 
+    enum RouteKind: String, Codable, Hashable {
+        case walking
+        case driving
+    }
+
+    /// Present only while a walking or driving route is being simulated.
+    struct RouteProgress: Codable, Hashable {
+        var kind: RouteKind
+        var destinationName: String
+        /// 0...1
+        var progress: Double
+        /// Estimated arrival; nil while paused or after arriving, so the
+        /// countdown never runs while the walker is not moving.
+        var arrivesAt: Date?
+        var isPaused: Bool
+        var hasArrived: Bool
+    }
+
     struct ContentState: Codable, Hashable {
         var placeName: String
         var subtitle: String
@@ -20,6 +38,7 @@ struct WrapPinActivityAttributes: ActivityAttributes {
         var longitude: Double
         var status: Status
         var startedAt: Date
+        var route: RouteProgress?
     }
 
     /// Identifies one location session; not shown to the user.

@@ -34,7 +34,11 @@ enum WalkingSimulationPhase: Equatable {
 @MainActor
 @Observable
 final class WalkingSimulationController {
-    private(set) var phase: WalkingSimulationPhase = .idle
+    private(set) var phase: WalkingSimulationPhase = .idle {
+        didSet {
+            if phase != oldValue { publishLiveActivityProgress() }
+        }
+    }
     private(set) var currentCoordinate: CLLocationCoordinate2D?
     private(set) var distanceTravelled: CLLocationDistance = 0
     private(set) var totalDistance: CLLocationDistance = 0
@@ -359,11 +363,42 @@ final class WalkingSimulationController {
         ).coordinate
     }
 
+    /// Shares route progress with the Lock Screen / Dynamic Island activity.
+    private func publishLiveActivityProgress() {
+        guard let destination else {
+            RouteProgressBoard.shared.publish(nil)
+            return
+        }
+        let isMoving = phase == .walking
+        let hasArrived = phase == .arrived
+        switch phase {
+        case .walking, .paused, .arrived, .preparing:
+            // Quantise so updates go out about once per percent.
+            let progress = hasArrived ? 1 : (self.progress * 100).rounded(.down) / 100
+            // Round the ETA to 10 s so a moving walker does not republish every tick.
+            let arrivesAt: Date? = isMoving && speedMetresPerSecond > 0
+                ? Date(timeIntervalSinceReferenceDate:
+                    ((Date().timeIntervalSinceReferenceDate + remainingDuration) / 10).rounded() * 10)
+                : nil
+            RouteProgressBoard.shared.publish(WrapPinActivityAttributes.RouteProgress(
+                kind: mode == .walking ? .walking : .driving,
+                destinationName: destination.name,
+                progress: progress,
+                arrivesAt: arrivesAt,
+                isPaused: phase == .paused,
+                hasArrived: hasArrived
+            ))
+        case .idle, .stopping, .failed:
+            RouteProgressBoard.shared.publish(nil)
+        }
+    }
+
     private func movementTarget(
         at coordinate: CLLocationCoordinate2D,
         destination: LocationTarget
     ) -> LocationTarget {
-        LocationTarget(
+        publishLiveActivityProgress()
+        return LocationTarget(
             name: String(
                 format: NSLocalizedString(mode == .walking ? "Walking to %@" : "Driving to %@", comment: ""),
                 destination.name

@@ -61,7 +61,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           IPA_DIR: ${{ runner.temp }}/ipa
         run: |
-          TAG="ios17-build-${GITHUB_RUN_NUMBER}"
+          VERSION="$(sed -n 's/^MARKETING_VERSION[[:space:]]*=[[:space:]]*//p' Configuration/Version.xcconfig | tail -n 1)"
+          BUILD="$(sed -n 's/^CURRENT_PROJECT_VERSION[[:space:]]*=[[:space:]]*//p' Configuration/Version.xcconfig | tail -n 1)"
+          # The app compares this tag with "<version>.<build>" to offer updates.
+          TAG="v${VERSION}.${BUILD}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; bump CURRENT_PROJECT_VERSION to publish a new one."
+            exit 0
+          fi
           SUBJECT="$(git log -1 --pretty=%s)"
           {
             echo "iOS 17.4+ build from \`${GITHUB_SHA::7}\`: ${SUBJECT}"
@@ -71,6 +78,6 @@ jobs:
           gh release create "$TAG" "$IPA_DIR"/*.ipa \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "WrapPin iOS 17 · build ${GITHUB_RUN_NUMBER}" \
+            --title "WrapPin iOS 17 · ${VERSION} (Build ${BUILD})" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --latest

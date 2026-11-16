@@ -6,7 +6,7 @@
   </picture>
 </p>
 
-<h1 align="center">WrapPin</h1>
+<h1 align="center">WrapPin · iOS 17 分支</h1>
 
 <p align="center">
   在一张地图上选择、测试并移动 iPhone 向系统报告的位置。
@@ -17,11 +17,12 @@
 </p>
 
 <p align="center">
-  <strong>当前版本：</strong>1.0.22（Build 74） · <strong>最低系统：</strong>iOS/iPadOS 18.0
+  <strong>目前版本：</strong>1.0.22（Build 77） · <strong>最低系統：</strong>iOS 17.4
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/iOS-18%2B-blue" alt="iOS 18+">
+  <img src="https://img.shields.io/badge/iOS-17.4%2B-brightgreen" alt="iOS 17.4+">
+  <img src="https://img.shields.io/badge/Live%20Activity-%E6%94%AF%E6%8F%B4-blue" alt="Live Activity">
   <img src="https://img.shields.io/badge/UI-SwiftUI-orange" alt="SwiftUI">
   <img src="https://img.shields.io/badge/%E7%BB%B4%E6%8A%A4%E8%80%85-suversal-purple" alt="由 suversal 维护">
   <img src="https://img.shields.io/badge/Release-1.0.22-blue" alt="Release 1.0.22">
@@ -29,7 +30,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/suversal/WrapPin/releases/latest">下载最新版</a> ·
+  <a href="https://github.com/shuili1013/WrapPin-os17/releases/latest"><strong>下載 iOS 17 版</strong></a> ·
+  <a href="https://github.com/suversal/WrapPin">上游 WrapPin</a> ·
   <a href="Documentation/UserGuide.zh-CN.md">使用手册</a> ·
   <a href="https://x.com/suversal">在 X 联系 @suversal</a>
 </p>
@@ -41,6 +43,92 @@ WrapPin 是 Sean Howarth 原项目 [Roam Control](https://github.com/seanhowarth
 项目面向开发、质量测试和个人负责任测试，支持固定位置、步行与驾车路线、收藏与历史记录，并通过配对记录和兼容的设备隧道建立安全的开发者定位会话。默认使用 LocalDevVPN；也可在设置中选择 Shadowrocket、Surge、Loon、Stash、Egern、Quantumult X 或 sing-box，它们需要按各自的配置说明启用 `10.7.0.1` 设备通道，普通代理配置不能提供所需的设备连接。
 
 > 请只在你拥有并控制的设备上使用。不要用于欺骗他人、伪造证据、规避安全限制，或违反第三方服务规则。
+
+## iOS 17 分支說明
+
+這是 [suversal/WrapPin](https://github.com/suversal/WrapPin) 的非官方分支。原版最低需要 iOS 18；這個分支**加回 iOS 17.4 以上的支援**，並做了一些介面改善。iOS 18 以上的裝置也能裝，不過建議直接用上游版本。
+
+> 已在 iPhone XS Max（iOS 17.6）上實測：固定定位、步行模擬和鎖定畫面的即時動態都能正常使用。
+
+### 與上游的差異
+
+| 項目 | 上游 WrapPin | 這個分支 |
+| --- | --- | --- |
+| 最低系統 | iOS 18.0 | **iOS 17.4** |
+| 配對檔 | RPPairing（`.rppairing`） | iOS 17 用 **Lockdown 配對檔**（`.mobiledevicepairing` / `pairingFile.plist`）；iOS 18 以上照舊用 RPPairing |
+| 連線方式 | 遠端配對 + TCP 隧道 | iOS 17 改用 lockdown 的 **CoreDeviceProxy** 隧道 |
+| 開發者映像（DDI） | 不處理 | iOS 17 會**自動下載並掛載**，重開機後也會自動重新掛載 |
+| 放置圖釘 | 輕點地圖 | **長按地圖**（約 0.4 秒，會震動回饋），避免拖動或誤觸時跑掉 |
+| 鎖定畫面 / 靈動島 | 無 | **即時動態（Live Activity）**：地點、已持續時間；步行或開車時有**進度條**和預計剩餘時間 |
+| 介面 | — | 底部卡片外框固定、只捲動內容；展開或收合詳情、按鈕狀態、收藏、複製等互動都加了動畫；兩個主要按鈕一樣大 |
+| 地圖流暢度 | — | 修正雙指縮放卡頓 |
+| 更新提醒 | 檢查上游 Release | 檢查**這個分支**的 Release |
+
+### 需要準備
+
+- iPhone，系統 **iOS 17.4 以上**（設定 → 一般 → 關於本機）
+- 一台電腦（Windows、Mac 或 Linux），只有第一次安裝和產生配對檔時需要
+- [LocalDevVPN](https://apps.apple.com/app/localdevvpn/id6755608044)（App Store，需要非中國區帳號）
+- [SideStore](https://sidestore.io)，用 [iLoader](https://iloader.app/) 從電腦安裝（[SideStore 安裝說明](https://docs.sidestore.io/docs/installation/prerequisites)）
+- [idevice_pair](https://github.com/jkcoxson/idevice_pair/releases/latest)，用來產生配對檔
+
+### 安裝步驟
+
+1. **安裝 LocalDevVPN**，打開並連線一次
+2. **用 iLoader 安裝 SideStore**：手機用 USB 接上電腦，照 iLoader 的指示安裝。裝好後到「設定 → 一般 → VPN 與裝置管理」信任開發者
+3. **開啟開發者模式**：設定 → 隱私權與安全性 → 開發者模式，開啟後手機會重新開機
+4. **產生配對檔**：在電腦打開 idevice_pair，選這台 iPhone，產生 **Lockdown** 配對檔（**不是** RPPairing），存成 `.mobiledevicepairing` 或 `pairingFile.plist`。你給 SideStore 用的那份配對檔也可以直接拿來用
+5. **把配對檔傳到手機**，存進「檔案」App
+6. **下載 IPA**：到 [Releases](https://github.com/shuili1013/WrapPin-os17/releases/latest) 下載最新的 `WrapPin-Standard-…-unsigned.ipa`，存進「檔案」App
+7. **用 SideStore 安裝**：打開 SideStore → 加號 → 從「檔案」選擇 IPA（不要用網址安裝）
+
+> 這版內含即時動態的 Widget 擴充，SideStore 安裝時會多註冊一個 App ID。免費 Apple ID 每 7 天最多 10 個 App ID，不夠時請先移除其他側載 App。
+
+### 第一次設定
+
+1. 打開 WrapPin → **Device Setup（裝置連接）**
+2. 按 **Import Pairing File**，選擇剛剛的配對檔
+3. 往下滑到 **Developer Disk Image**，按 **Download Developer Disk Image**，下載約 17 MB，只需要下載一次
+4. 按右上角 **Done**
+
+### 使用方式
+
+**固定定位**
+1. 打開 LocalDevVPN 並連線
+2. 回到 WrapPin，**長按地圖**放置圖釘，或在上方搜尋地點、輸入座標
+3. 按 **Start Location**。第一次連線（以及每次重開機後第一次）會先掛載開發者映像，要等 10–60 秒
+4. 狀態變成 **Session active** 就成功了，鎖定畫面會出現即時動態
+5. 想換位置：長按另一個地點 → 按 **Update Location**
+6. 結束：按 **Stop & Restore**，會恢復真實定位
+
+**步行 / 開車模擬**
+1. 選好目的地後按 **Preview Walk** 或 **Preview Drive**
+2. 有多條路線時，點地圖上的路線或卡片上的選項切換
+3. 按開始後，鎖定畫面的即時動態會顯示進度條、百分比和預計剩餘時間；暫停時會顯示「已暫停」
+
+**座標模式**
+在台灣請選 **WGS84 unchanged**。GCJ-02 是給中國大陸地圖用的。
+
+### 常見問題
+
+- **匯入時說需要 Lockdown 配對檔**：你匯入的是 RPPairing。請用 idevice_pair 改選 Lockdown 重新產生
+- **一直卡在連線**：確認 LocalDevVPN 已連線、開發者模式有開、手機連著 Wi‑Fi。App 提示關閉行動網路時，先照著做，連上後再打開
+- **提示開發者映像未掛載**：到 Device Setup 重新下載開發者映像，並確認手機能上網（掛載時要向 Apple 取得簽章）
+- **鎖定畫面沒有即時動態**：到「設定 → WrapPin」開啟「即時動態」；定位成功時 WrapPin 要在前景，若當時在其他 App，切回 WrapPin 就會出現
+- **定位卡在假位置**：打開 WrapPin 按 Stop & Restore，或直接重新開機
+- **7 天後打不開**：免費帳號的簽名只有 7 天，打開 SideStore 重新整理（Refresh）即可
+- **其他錯誤**：到「設定 → 連線檢測（Connection Health）」複製診斷資訊，到 [Issues](https://github.com/shuili1013/WrapPin-os17/issues) 回報，**不要**附上配對檔
+
+### 從原始碼編譯
+
+推送到 `ios17-lockdown` 分支後，GitHub Actions 會重新編譯 Rust 配對引擎、執行離線檢查、打包未簽名 IPA，並自動發布 Release（tag 為 `v<版本>.<build>`）。要發布新版，請先遞增 `Configuration/Version.xcconfig` 裡的 `CURRENT_PROJECT_VERSION`。
+
+本分支遵守上游的 [PolyForm Noncommercial License 1.0.0](LICENSE)，保留原作者 Sean Howarth（[Roam Control](https://github.com/seanhowarthdev/Roam-Control)）與 suversal 的署名，僅供非商業用途。
+
+---
+
+> 以下為**上游 WrapPin 原始說明**（以 iOS 18 以上為準）。iOS 17 的安裝與配對請以上方的「iOS 17 分支說明」為準。
+
 
 1.0.22（Build 74）优化后台保活和定位断线重连，重连期间保留路线进度；主动停止后不会自动重启。两版编译、离线回归和包校验通过，长时间锁屏效果待真机回测。见[更新说明](Documentation/Release-1.0.22.zh-CN.md)。
 

@@ -9,6 +9,9 @@ struct WrapPinLiveActivityBundle: WidgetBundle {
     }
 }
 
+private typealias State = WrapPinActivityAttributes.ContentState
+private typealias Route = WrapPinActivityAttributes.RouteProgress
+
 struct LocationActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WrapPinActivityAttributes.self) { context in
@@ -20,89 +23,116 @@ struct LocationActivityWidget: Widget {
             let state = context.state
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    StatusIcon(status: state.status)
+                    StatusIcon(state: state)
                         .font(.title2)
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    ElapsedTime(state: state)
+                    TrailingFigure(state: state)
                         .font(.title3.monospacedDigit().weight(.semibold))
                         .padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     VStack(spacing: 2) {
-                        Text(statusTitle(state.status))
+                        Text(statusTitle(state))
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(statusColor(state.status))
-                        Text(state.placeName)
+                            .foregroundStyle(accent(state))
+                        Text(headline(state))
                             .font(.headline)
                             .lineLimit(1)
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 4) {
-                        if !state.subtitle.isEmpty {
-                            Text(state.subtitle)
-                                .font(.caption)
+                    if let route = state.route {
+                        RouteProgressRow(route: route, compact: false)
+                            .padding(.horizontal, 4)
+                    } else {
+                        VStack(spacing: 4) {
+                            if !state.subtitle.isEmpty {
+                                Text(state.subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Text(coordinateText(state))
+                                .font(.caption2.monospacedDigit())
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
                         }
-                        Text(coordinateText(state))
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
                     }
                 }
             } compactLeading: {
-                StatusIcon(status: state.status)
+                StatusIcon(state: state)
             } compactTrailing: {
-                ElapsedTime(state: state)
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .frame(maxWidth: 52)
+                if let route = state.route {
+                    Text(percentText(route))
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(accent(state))
+                } else {
+                    ElapsedTime(state: state)
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .frame(maxWidth: 52)
+                }
             } minimal: {
-                StatusIcon(status: state.status)
+                if let route = state.route {
+                    ProgressView(value: route.progress) {
+                        StatusIcon(state: state).font(.caption2)
+                    }
+                    .progressViewStyle(.circular)
+                    .tint(accent(state))
+                } else {
+                    StatusIcon(state: state)
+                }
             }
             .widgetURL(URL(string: "wrappin://live-activity"))
-            .keylineTint(statusColor(state.status))
+            .keylineTint(accent(state))
         }
     }
 }
 
 private struct LockScreenView: View {
-    let state: WrapPinActivityAttributes.ContentState
+    let state: State
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(statusColor(state.status).opacity(0.22))
-                StatusIcon(status: state.status)
-                    .font(.title2.weight(.semibold))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(accent(state).opacity(0.22))
+                    StatusIcon(state: state)
+                        .font(.title2.weight(.semibold))
+                }
+                .frame(width: 48, height: 48)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(statusTitle(state))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(accent(state))
+                    Text(headline(state))
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    if state.route == nil {
+                        Text(state.subtitle.isEmpty ? coordinateText(state) : state.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    TrailingFigure(state: state)
+                        .font(.title3.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text(trailingCaption(state))
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
             }
-            .frame(width: 48, height: 48)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(statusTitle(state.status))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(statusColor(state.status))
-                Text(state.placeName)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Text(state.subtitle.isEmpty ? coordinateText(state) : state.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.7))
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            VStack(alignment: .trailing, spacing: 2) {
-                ElapsedTime(state: state)
-                    .font(.title3.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.white)
-                Text("Elapsed")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.6))
+            if let route = state.route {
+                RouteProgressRow(route: route, compact: true)
             }
         }
         .padding(.horizontal, 18)
@@ -110,17 +140,78 @@ private struct LockScreenView: View {
     }
 }
 
-private struct StatusIcon: View {
-    let status: WrapPinActivityAttributes.Status
+/// The progress bar plus "x% · y left" under it.
+private struct RouteProgressRow: View {
+    let route: Route
+    let compact: Bool
 
     var body: some View {
-        Image(systemName: status == .active ? "location.fill" : "arrow.triangle.2.circlepath")
-            .foregroundStyle(statusColor(status))
+        VStack(alignment: .leading, spacing: 6) {
+            ProgressView(value: route.progress)
+                .progressViewStyle(.linear)
+                .tint(routeAccent(route))
+                .scaleEffect(x: 1, y: compact ? 1.6 : 1.3, anchor: .center)
+            HStack {
+                Text(percentText(route))
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(compact ? .white : .primary)
+                Spacer()
+                RemainingText(route: route)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(compact ? Color.white.opacity(0.7) : .secondary)
+            }
+        }
+    }
+}
+
+private struct RemainingText: View {
+    let route: Route
+
+    var body: some View {
+        if route.hasArrived {
+            Text("Arrived")
+        } else if route.isPaused {
+            Text("Paused")
+        } else if let arrivesAt = route.arrivesAt, arrivesAt > Date() {
+            HStack(spacing: 4) {
+                Text(timerInterval: Date()...arrivesAt, countsDown: true)
+                    .multilineTextAlignment(.trailing)
+                Text("left")
+            }
+        } else {
+            Text("Almost there")
+        }
+    }
+}
+
+private struct StatusIcon: View {
+    let state: State
+
+    var body: some View {
+        Image(systemName: symbol)
+            .foregroundStyle(accent(state))
+    }
+
+    private var symbol: String {
+        if state.status == .reconnecting { return "arrow.triangle.2.circlepath" }
+        guard let route = state.route else { return "location.fill" }
+        if route.hasArrived { return "flag.checkered" }
+        if route.isPaused { return "pause.circle.fill" }
+        return route.kind == .walking ? "figure.walk" : "car.fill"
+    }
+}
+
+/// Elapsed time for a fixed location; the session timer for a route.
+private struct TrailingFigure: View {
+    let state: State
+
+    var body: some View {
+        ElapsedTime(state: state)
     }
 }
 
 private struct ElapsedTime: View {
-    let state: WrapPinActivityAttributes.ContentState
+    let state: State
 
     var body: some View {
         Text(timerInterval: state.startedAt...Date.distantFuture, countsDown: false)
@@ -128,20 +219,38 @@ private struct ElapsedTime: View {
     }
 }
 
-private func statusTitle(_ status: WrapPinActivityAttributes.Status) -> LocalizedStringKey {
-    switch status {
-    case .active: "Simulating location"
-    case .reconnecting: "Reconnecting…"
-    }
+private func headline(_ state: State) -> String {
+    state.route?.destinationName ?? state.placeName
 }
 
-private func statusColor(_ status: WrapPinActivityAttributes.Status) -> Color {
-    switch status {
-    case .active: .blue
-    case .reconnecting: .orange
-    }
+private func statusTitle(_ state: State) -> LocalizedStringKey {
+    if state.status == .reconnecting { return "Reconnecting…" }
+    guard let route = state.route else { return "Simulating location" }
+    if route.hasArrived { return "Arrived" }
+    if route.isPaused { return "Paused" }
+    return route.kind == .walking ? "Walking to" : "Driving to"
 }
 
-private func coordinateText(_ state: WrapPinActivityAttributes.ContentState) -> String {
+private func trailingCaption(_ state: State) -> LocalizedStringKey {
+    "Elapsed"
+}
+
+private func accent(_ state: State) -> Color {
+    if state.status == .reconnecting { return .orange }
+    if let route = state.route { return routeAccent(route) }
+    return .blue
+}
+
+private func routeAccent(_ route: Route) -> Color {
+    if route.hasArrived { return .green }
+    if route.isPaused { return .yellow }
+    return route.kind == .walking ? .green : .blue
+}
+
+private func percentText(_ route: Route) -> String {
+    "\(Int((route.progress * 100).rounded()))%"
+}
+
+private func coordinateText(_ state: State) -> String {
     String(format: "%.5f, %.5f", state.latitude, state.longitude)
 }
