@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [ios17-lockdown]
+    paths-ignore: ['README.md', 'README.en.md', 'Documentation/**']
 
 permissions:
   contents: write
