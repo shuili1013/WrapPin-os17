@@ -68,15 +68,6 @@ struct LocationSelectionCard: View {
             MapPanelViewport(maximumHeight: max(120, maximumHeight - headerHeight)) {
                 padded
             }
-            .mask(
-                VStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 8)
-                    Rectangle()
-                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 12)
-                }
-            )
         } else {
             padded
         }
@@ -98,12 +89,22 @@ struct LocationSelectionCard: View {
                         if isWorking {
                             ProgressView()
                                 .tint(.white)
+                                .transition(.scale.combined(with: .opacity))
                         } else {
                             Image(systemName: primarySymbol)
+                                .contentTransition(.symbolEffect(.replace))
+                                .transition(.scale.combined(with: .opacity))
                         }
-                        Text(primaryTitle)
+                        Text(verbatim: primaryTitle)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .contentTransition(.opacity)
                     }
-                    .frame(maxWidth: .infinity)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 22)
+                    .animation(reduceMotion ? nil : MapAnimation.snappy, value: primaryTitle)
+                    .animation(reduceMotion ? nil : MapAnimation.snappy, value: isWorking)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -148,6 +149,8 @@ struct LocationSelectionCard: View {
                         .foregroundStyle(isFailure ? .red : .secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.opacity)
+                        .transition(detailTransition)
                         .transition(.opacity)
                 }
 
@@ -308,11 +311,13 @@ struct LocationSelectionCard: View {
                             didCopyCoordinates ? "Coordinates copied" : "Copy coordinates",
                             systemImage: didCopyCoordinates ? "checkmark" : "doc.on.doc"
                         )
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(reduceMotion ? nil : MapAnimation.snappy, value: didCopyCoordinates)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(didCopyCoordinates ? .green : .blue)
                         .frame(minHeight: 44)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -325,9 +330,11 @@ struct LocationSelectionCard: View {
             Image(systemName: isFavourite ? "heart.fill" : "heart")
                 .font(.title3)
                 .foregroundStyle(isFavourite ? .pink : .secondary)
+                .contentTransition(.symbolEffect(.replace))
+                .symbolEffect(.bounce, value: isFavourite)
                 .frame(width: 44, height: 44)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(isResolvingAddress)
         .accessibilityLabel(isFavourite ? "Remove from favourites" : "Add to favourites")
 
@@ -338,7 +345,7 @@ struct LocationSelectionCard: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 44, height: 44)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityLabel("Clear selected location")
         }
     }

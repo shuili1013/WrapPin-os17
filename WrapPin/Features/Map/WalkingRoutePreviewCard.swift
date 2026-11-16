@@ -79,7 +79,7 @@ struct WalkingRoutePreviewCard: View {
                             .foregroundStyle(.secondary)
                             .frame(width: 44, height: 44)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel("Close route preview")
                 }
             }
@@ -228,7 +228,7 @@ struct WalkingRoutePreviewCard: View {
                     .stroke(.blue, lineWidth: isSelected ? 1.5 : 0)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             String(

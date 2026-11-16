@@ -81,7 +81,7 @@ struct MapSearchBar: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 44, height: 44)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityLabel("Clear search")
             }
 
@@ -107,7 +107,7 @@ struct MapSearchBar: View {
                     )
                     .frame(minHeight: 44)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityLabel("Overseas search")
             .accessibilityHint("Switches between domestic and overseas place search")
             .accessibilityAddTraits(isOverseasSearch ? .isSelected : [])
@@ -119,7 +119,7 @@ struct MapSearchBar: View {
             isFocused = false
         }
         .font(.subheadline.weight(.semibold))
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .frame(minWidth: 44, minHeight: 44)
         .accessibilityLabel("Dismiss keyboard")
         .accessibilityHint("Dismisses the keyboard")

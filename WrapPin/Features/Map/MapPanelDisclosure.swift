@@ -18,15 +18,17 @@ struct MapPanelDisclosure: View {
                 Spacer(minLength: 0)
                 Text(isCollapsed ? "Show Details" : "Hide Details")
                     .font(.caption.weight(.semibold))
-                Image(systemName: isCollapsed ? "chevron.up" : "chevron.down")
+                    .contentTransition(.opacity)
+                Image(systemName: "chevron.down")
                     .font(.system(size: 12, weight: .semibold))
+                    .rotationEffect(.degrees(isCollapsed ? 180 : 0))
                     .accessibilityHidden(true)
             }
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityIdentifier("map.detailsDisclosure")
         .simultaneousGesture(
             DragGesture(minimumDistance: 18)
@@ -42,7 +44,7 @@ struct MapPanelDisclosure: View {
     }
 
     private func setCollapsed(_ collapsed: Bool) {
-        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.88)) {
+        withAnimation(reduceMotion ? nil : MapAnimation.panel) {
             isCollapsed = collapsed
         }
     }
@@ -51,6 +53,7 @@ struct MapPanelDisclosure: View {
 /// Fit short cards to their content and scroll tall cards within the safe area.
 /// Measuring the content avoids a tall fitting container centering a short card.
 struct MapPanelViewport<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let maximumHeight: CGFloat
     @ViewBuilder var content: () -> Content
     @State private var contentHeight: CGFloat?
@@ -63,7 +66,16 @@ struct MapPanelViewport<Content: View>: View {
                 .onGeometryChange(for: CGFloat.self) { proxy in
                     proxy.size.height
                 } action: { height in
-                    contentHeight = height
+                    // The measured height arrives after layout, outside the
+                    // transaction that expanded or collapsed the card, so
+                    // animate it here or the frame would jump.
+                    guard contentHeight != nil, !reduceMotion else {
+                        contentHeight = height
+                        return
+                    }
+                    withAnimation(MapAnimation.panel) {
+                        contentHeight = height
+                    }
                 }
         }
         .scrollBounceBehavior(.basedOnSize)

@@ -17,7 +17,11 @@ struct HomeView: View {
     @State private var shouldRefreshRealLocationWhenActive = false
     @State private var shouldClearLocationAfterRestoration = false
     @State private var isLocatingRealLocationAfterRestoration = false
-    @State private var visibleMapCamera: MapCamera?
+    /// Kept in a reference box: writing it during a pinch or pan must not
+    /// invalidate the whole screen every frame (that made zooming stutter).
+    @State private var cameraTracker = MapCameraTracker()
+    /// Only the compass reads this, rounded so it changes rarely.
+    @State private var roundedMapHeading: Double = 0
     @State private var isPreparingRecoveredWalk = false
     @State private var recoveredWalkPreparationIdentifier: UUID?
     @State private var recoveredWalkError: String?
@@ -25,7 +29,6 @@ struct HomeView: View {
     @State private var fixedCoordinateMode: FixedCoordinateMode = .wgs84
     @State private var compactHeaderHeight: CGFloat = 0
     @State private var bottomDockHeight: CGFloat = 0
-    @State private var didDropPinThisPress = false
     @FocusState private var isSearchFocused: Bool
     @AppStorage("isMapPanelDetailsCollapsed") private var areDetailsCollapsed =
         UIDevice.current.userInterfaceIdiom == .pad
@@ -262,7 +265,11 @@ struct HomeView: View {
                 MapScaleView()
             }
             .onMapCameraChange(frequency: .continuous) { context in
-                visibleMapCamera = context.camera
+                cameraTracker.camera = context.camera
+                let heading = (context.camera.heading / 2).rounded() * 2
+                if heading != roundedMapHeading {
+                    roundedMapHeading = heading
+                }
             }
             .onTapGesture { point in
                 if isSearchFocused {
@@ -276,15 +283,11 @@ struct HomeView: View {
                 guard let coordinate = proxy.convert(point, from: .local) else { return }
                 _ = selectPreviewedRoute(at: point, coordinate: coordinate, proxy: proxy)
             }
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.45, maximumDistance: 12)
-                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
-                    .onChanged { value in
-                        guard case .second(true, let drag?) = value, !didDropPinThisPress else { return }
-                        didDropPinThisPress = true
-                        dropPin(at: drag.startLocation, proxy: proxy)
-                    }
-                    .onEnded { _ in didDropPinThisPress = false }
+            .background(
+                MapLongPressInstaller { coordinate in
+                    dropPin(at: coordinate)
+                }
+                .allowsHitTesting(false)
             )
         }
         .ignoresSafeArea()
@@ -301,7 +304,7 @@ struct HomeView: View {
                         .font(.system(size: 18, weight: .semibold))
                         .frame(width: 44, height: 44)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityLabel("Hide Controls")
                 .accessibilityIdentifier("map.hideSidebar")
             }
@@ -343,7 +346,7 @@ struct HomeView: View {
                 .frame(minHeight: 44)
                 .background(.regularMaterial, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .accessibilityIdentifier("map.showSidebar")
     }
 
@@ -428,6 +431,9 @@ struct HomeView: View {
             }
             .accessibilityIdentifier("map.bottomCard")
         }
+        .animation(reduceMotion ? nil : MapAnimation.panel, value: mapModel.selectedLocation)
+        .animation(reduceMotion ? nil : MapAnimation.panel, value: walkingRoutePlanner.route != nil)
+        .animation(reduceMotion ? nil : MapAnimation.snappy, value: appModel.deviceSession.phase)
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .frame(maxWidth: 452)
@@ -490,8 +496,9 @@ struct HomeView: View {
                     isShowingDeviceSetup = true
                 } label: {
                     ConnectionBadge(state: appModel.connectionState)
+                        .animation(reduceMotion ? nil : MapAnimation.snappy, value: appModel.connectionState)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityHint("Opens device pairing setup")
 
                 Spacer()
@@ -508,7 +515,7 @@ struct HomeView: View {
                             .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
                             .frame(width: 44, height: 44)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel("Favourites and history")
 
                     Button {
@@ -522,7 +529,7 @@ struct HomeView: View {
                             .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
                             .frame(width: 44, height: 44)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel("Settings")
                 }
             }
@@ -555,7 +562,7 @@ struct HomeView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
 
                     Button(action: releaseUpdates.dismissBanner) {
                         Image(systemName: "xmark")
@@ -563,7 +570,7 @@ struct HomeView: View {
                             .foregroundStyle(.secondary)
                             .frame(width: 44, height: 44)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel("Dismiss update reminder")
                 }
                 .padding(.leading, 14)
@@ -605,7 +612,7 @@ struct HomeView: View {
                     )
                     .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
     }
@@ -654,7 +661,7 @@ struct HomeView: View {
                             .frame(width: 44, height: 44)
                             .background(.regularMaterial, in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel(
                         followsSimulatedLocation
                             ? "Show whole route"
@@ -669,7 +676,7 @@ struct HomeView: View {
                             .background(.regularMaterial, in: Circle())
                             .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .accessibilityLabel("Return map to north")
                     .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
                 }
@@ -695,7 +702,7 @@ struct HomeView: View {
                         .background(.regularMaterial, in: Circle())
                         .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .disabled(mapModel.isFindingRealLocation)
                     .accessibilityLabel("Show my current location")
                 }
@@ -989,7 +996,7 @@ struct HomeView: View {
     }
 
     private var normalisedMapHeading: Double {
-        guard let heading = visibleMapCamera?.heading else { return 0 }
+        let heading = roundedMapHeading
         let remainder = heading.truncatingRemainder(dividingBy: 360)
         return remainder >= 0 ? remainder : remainder + 360
     }
@@ -1000,7 +1007,7 @@ struct HomeView: View {
     }
 
     private func resetMapHeading() {
-        guard let camera = visibleMapCamera else { return }
+        guard let camera = cameraTracker.camera else { return }
         let northUpCamera = MapCamera(
             centerCoordinate: camera.centerCoordinate,
             distance: camera.distance,
@@ -1043,13 +1050,11 @@ struct HomeView: View {
         )
     }
 
-    private func dropPin(at point: CGPoint, proxy: MapProxy) {
+    private func dropPin(at coordinate: CLLocationCoordinate2D) {
         if isSearchFocused {
             isSearchFocused = false
         }
         guard !walkingSimulation.locksDestination else { return }
-        guard let coordinate = proxy.convert(point, from: .local) else { return }
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         Task { await mapModel.selectDroppedPin(at: coordinate) }
     }
 
@@ -1245,4 +1250,9 @@ extension View {
     HomeView()
         .environment(AppModel())
         .environment(ReleaseUpdateModel())
+}
+
+/// Holds the latest camera without triggering SwiftUI updates.
+final class MapCameraTracker {
+    var camera: MapCamera?
 }
