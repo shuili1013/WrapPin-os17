@@ -14,7 +14,7 @@ struct AboutWrapPinView: View {
                     text: "Find a place by name or enter latitude and longitude. Choosing a result also clears the search ready for the next one."
                 )
                 guideRow(
-                    "Tap the map",
+                    "Long-press the map",
                     symbol: "hand.tap",
                     text: "Drop a precise pin anywhere on the map. The close button on its card clears that pin."
                 )

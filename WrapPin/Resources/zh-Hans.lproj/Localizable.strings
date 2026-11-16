@@ -880,3 +880,8 @@
 "The iPhone rejected the pairing file. Create a new one with your computer." = "iPhone 拒绝了这个配对文件，请用电脑重新创建。";
 "WrapPin could not read the iPhone's chip identifier." = "WrapPin 无法读取 iPhone 的芯片标识。";
 "The iPhone returned an unexpected chip identifier." = "iPhone 返回了无法识别的芯片标识。";
+
+/* Long-press to drop a pin */
+"Search above or long-press anywhere on the map." = "在上方搜索，或长按地图上的任意位置。";
+"Search for a place or long-press the map, then start a fixed location or preview a walking or driving route." = "搜索地点或长按地图，即可模拟固定位置，也可以先预览步行或驾车路线。";
+"Long-press the map" = "长按地图";

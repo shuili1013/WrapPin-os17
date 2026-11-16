@@ -5,6 +5,7 @@ import UIKit
 struct LocationSelectionCard: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.mapPanelMaximumHeight) private var maximumHeight
 
     let location: LocationTarget?
     let isFavourite: Bool
@@ -33,13 +34,13 @@ struct LocationSelectionCard: View {
         VStack(spacing: 0) {
             if location != nil {
                 MapPanelDisclosure(isCollapsed: $isCollapsed)
+                    .padding(.horizontal, 16)
             }
-            cardContent
+            scrollableContent
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
-        .padding(.top, location == nil ? 16 : 0)
+        .padding(.top, location == nil ? 4 : 0)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: .black.opacity(0.12), radius: 16, y: 5)
         .sensoryFeedback(.selection, trigger: isCollapsed)
         .confirmationDialog(
@@ -51,6 +52,33 @@ struct LocationSelectionCard: View {
             Button("Keep Simulated Location", role: .cancel) {}
         } message: {
             Text("WrapPin will end the simulated location and restore this iPhone's real location.")
+        }
+    }
+
+    /// Header stays put; only the details scroll when the card is taller
+    /// than the space above the home indicator.
+    @ViewBuilder
+    private var scrollableContent: some View {
+        let padded = cardContent
+            .padding(.horizontal, 16)
+            .padding(.top, location == nil ? 12 : 8)
+            .padding(.bottom, 16)
+        if let maximumHeight {
+            let headerHeight: CGFloat = location == nil ? 4 : 44
+            MapPanelViewport(maximumHeight: max(120, maximumHeight - headerHeight)) {
+                padded
+            }
+            .mask(
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 8)
+                    Rectangle()
+                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 12)
+                }
+            )
+        } else {
+            padded
         }
     }
 
@@ -144,7 +172,7 @@ struct LocationSelectionCard: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Choose a location")
                             .font(.headline)
-                        Text("Search above or tap anywhere on the map.")
+                        Text("Search above or long-press anywhere on the map.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }

@@ -70,3 +70,17 @@ struct MapPanelViewport<Content: View>: View {
         .frame(height: min(contentHeight ?? maximumHeight, maximumHeight), alignment: .bottom)
     }
 }
+
+/// The tallest a bottom map card may be. A card that reads this keeps its
+/// rounded frame and header in place and scrolls only its content, instead of
+/// the whole card sliding (and being clipped) inside an outer scroll view.
+private struct MapPanelMaximumHeightKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    var mapPanelMaximumHeight: CGFloat? {
+        get { self[MapPanelMaximumHeightKey.self] }
+        set { self[MapPanelMaximumHeightKey.self] = newValue }
+    }
+}

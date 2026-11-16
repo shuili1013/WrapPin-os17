@@ -25,6 +25,7 @@ struct HomeView: View {
     @State private var fixedCoordinateMode: FixedCoordinateMode = .wgs84
     @State private var compactHeaderHeight: CGFloat = 0
     @State private var bottomDockHeight: CGFloat = 0
+    @State private var didDropPinThisPress = false
     @FocusState private var isSearchFocused: Bool
     @AppStorage("isMapPanelDetailsCollapsed") private var areDetailsCollapsed =
         UIDevice.current.userInterfaceIdiom == .pad
@@ -269,11 +270,22 @@ struct HomeView: View {
                     return
                 }
 
+                // A tap only chooses between previewed routes; pins need a
+                // long press so panning and stray taps never move the target.
                 guard !walkingSimulation.locksDestination else { return }
                 guard let coordinate = proxy.convert(point, from: .local) else { return }
-                if selectPreviewedRoute(at: point, coordinate: coordinate, proxy: proxy) { return }
-                Task { await mapModel.selectDroppedPin(at: coordinate) }
+                _ = selectPreviewedRoute(at: point, coordinate: coordinate, proxy: proxy)
             }
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.45, maximumDistance: 12)
+                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                    .onChanged { value in
+                        guard case .second(true, let drag?) = value, !didDropPinThisPress else { return }
+                        didDropPinThisPress = true
+                        dropPin(at: drag.startLocation, proxy: proxy)
+                    }
+                    .onEnded { _ in didDropPinThisPress = false }
+            )
         }
         .ignoresSafeArea()
     }
@@ -393,15 +405,25 @@ struct HomeView: View {
         detailsCollapsed: Binding<Bool>,
         topClearance: CGFloat = 60
     ) -> some View {
-        VStack(spacing: 10) {
+        let panelHeight = min(
+            520, max(80, min(availableHeight * 0.62, availableHeight - topClearance - 80)))
+        return VStack(spacing: 10) {
             mapControls
-            MapPanelViewport(
-                maximumHeight: min(
-                    440, max(80, min(availableHeight * 0.6, availableHeight - topClearance - 80)))
-            ) {
-                VStack(spacing: 10) {
-                    backgroundWarning
-                    selectionCard(detailsCollapsed: detailsCollapsed)
+            Group {
+                if usesSelfScrollingSelectionCard {
+                    // The location card keeps its frame fixed and scrolls inside.
+                    VStack(spacing: 10) {
+                        backgroundWarning
+                        selectionCard(detailsCollapsed: detailsCollapsed)
+                            .environment(\.mapPanelMaximumHeight, panelHeight)
+                    }
+                } else {
+                    MapPanelViewport(maximumHeight: panelHeight) {
+                        VStack(spacing: 10) {
+                            backgroundWarning
+                            selectionCard(detailsCollapsed: detailsCollapsed)
+                        }
+                    }
                 }
             }
             .accessibilityIdentifier("map.bottomCard")
@@ -679,6 +701,12 @@ struct HomeView: View {
                 }
             }
         }
+    }
+
+    /// True when `selectionCard` shows `LocationSelectionCard`.
+    private var usesSelfScrollingSelectionCard: Bool {
+        !isLocatingRealLocationAfterRestoration
+            && !(walkingRoutePlanner.route != nil && walkingRoutePlanner.destination != nil)
     }
 
     @ViewBuilder
@@ -1013,6 +1041,16 @@ struct HomeView: View {
             mode: walkingRoutePlanner.mode,
             coordinateMode: walkingSimulation.coordinateMode
         )
+    }
+
+    private func dropPin(at point: CGPoint, proxy: MapProxy) {
+        if isSearchFocused {
+            isSearchFocused = false
+        }
+        guard !walkingSimulation.locksDestination else { return }
+        guard let coordinate = proxy.convert(point, from: .local) else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        Task { await mapModel.selectDroppedPin(at: coordinate) }
     }
 
     /// Returns true when the tap landed on one of several previewed routes, so
