@@ -135,12 +135,23 @@ struct LocationSelectionCard: View {
                 }
 
                 if isActive && !isShowingActiveTarget {
-                    Button("Stop & Restore", role: .destructive) {
+                    // Same size as the primary button so both actions read as equals.
+                    Button(role: .destructive) {
                         isConfirmingStop = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "stop.circle.fill")
+                            Text("Stop & Restore")
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 22)
                     }
                     .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .frame(maxWidth: .infinity)
+                    .controlSize(.large)
+                    .tint(.red)
+                    .transition(detailTransition)
                 }
 
                 if !isCollapsed || !isRoutineStatus {

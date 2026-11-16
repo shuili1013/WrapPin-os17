@@ -87,8 +87,20 @@ package() {
             exit 1
         fi
     elif [[ -e "${app}/PlugIns" ]]; then
-        print -u2 "The Standard edition must not contain an app extension."
-        exit 1
+        # The Standard edition may embed only the Live Activity widget; it must
+        # never carry a Packet Tunnel / NetworkExtension plug-in.
+        local live_activity="${app}/PlugIns/WrapPinLiveActivity.appex"
+        local plugins=("${app}"/PlugIns/*(N))
+        if [[ ${#plugins[@]} -ne 1 || ! -d "${live_activity}" ]]; then
+            print -u2 "The Standard edition may only contain WrapPinLiveActivity.appex."
+            exit 1
+        fi
+        check_identity "${live_activity}"
+        local app_id="$(plist_value "${app}" CFBundleIdentifier)"
+        if [[ "$(plist_value "${live_activity}" CFBundleIdentifier)" != "${app_id}.liveactivity" ]]; then
+            print -u2 "The Live Activity extension ID must be ${app_id}.liveactivity."
+            exit 1
+        fi
     fi
 
     # ditto produces the ZIP layout SideStore accepts; see Releases/README.md (1.0.8).

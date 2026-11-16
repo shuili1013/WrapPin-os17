@@ -34,6 +34,8 @@ jobs:
 
       - name: Offline checks
         run: |
+          cmp WrapPin/Services/LiveActivity/WrapPinActivityAttributes.swift \
+            WrapPinLiveActivity/WrapPinActivityAttributes.swift
           python3 scripts/check-localization.py
           python3 scripts/test-failure-stages.py
           xcrun swiftc -parse-as-library scripts/test-pairing-import.swift \

@@ -69,6 +69,7 @@ final class AppModel {
     let pairingService: any PairingService
     let onDevicePairing: OnDevicePairingCoordinator
     let deviceSession: LocalDeviceSessionCoordinator
+    private let liveActivity = LocationLiveActivityController()
     private let usageAnalytics: UsageAnalyticsService
     let localDevVPNInstallURL = URL(string: "https://apps.apple.com/app/localdevvpn/id6755608044")!
     var selectedTunnelAppInstallURL: URL {
@@ -718,6 +719,7 @@ final class AppModel {
     }
 
     private func applyDeviceSessionPhase(_ phase: DeviceSessionPhase) {
+        liveActivity.apply(phase)
         switch phase {
         case .idle:
             pendingSessionAnalyticsEvent = nil
