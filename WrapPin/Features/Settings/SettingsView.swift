@@ -51,6 +51,26 @@ struct SettingsView: View {
                     .padding(.vertical, 4)
                 }
 
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        settingsRowLabel("Coordinate Mode", symbol: "globe.asia.australia")
+                            .font(.subheadline.weight(.medium))
+
+                        Picker("Coordinate Mode", selection: coordinateModeBinding) {
+                            Text("Automatic").tag(CoordinateModePreference.automatic)
+                            Text("WGS84").tag(CoordinateModePreference.wgs84)
+                            Text("GCJ-02").tag(CoordinateModePreference.gcj02)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    Text("Location")
+                } footer: {
+                    Text("Automatic uses GCJ-02 in mainland China and WGS84 everywhere else, including Taiwan. If the simulated position is offset from the map, try the other mode. Changing it updates an active fixed location right away.")
+                }
+
                 Section("Device") {
                     NavigationLink {
                         ConnectionHealthView()
@@ -342,6 +362,13 @@ struct SettingsView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
         }
+    }
+
+    private var coordinateModeBinding: Binding<CoordinateModePreference> {
+        Binding(
+            get: { appModel.coordinateModePreference },
+            set: { appModel.setCoordinateModePreference($0) }
+        )
     }
 
     @ViewBuilder

@@ -17,13 +17,11 @@ struct LocationSelectionCard: View {
     let tunnelAppInstallURL: URL
     let previewingRouteMode: RouteMode?
     let routeError: String?
-    let coordinateMode: FixedCoordinateMode
-    let recommendedCoordinateMode: FixedCoordinateMode
     @Binding var isCollapsed: Bool
-    let onCoordinateModeChange: (FixedCoordinateMode) -> Void
     let onToggleFavourite: () -> Void
     let onClearSelection: () -> Void
     let onPreviewRoute: (RouteMode) -> Void
+    let onAreaDrift: () -> Void
     let onStart: () -> Void
     let onStop: () -> Void
 
@@ -79,11 +77,6 @@ struct LocationSelectionCard: View {
             if let location {
                 locationHeader(for: location)
 
-                if !isCollapsed {
-                    coordinateModeSelection
-                        .transition(detailTransition)
-                }
-
                 Button(action: primaryAction) {
                     HStack(spacing: 8) {
                         if isWorking {
@@ -124,6 +117,11 @@ struct LocationSelectionCard: View {
                         }
                         .transition(detailTransition)
                     }
+                }
+
+                if !isCollapsed && !isWorking {
+                    areaDriftButton
+                        .transition(detailTransition)
                 }
 
                 if let routeError {
@@ -192,6 +190,8 @@ struct LocationSelectionCard: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                areaDriftButton
             }
         }
     }
@@ -204,46 +204,20 @@ struct LocationSelectionCard: View {
                 with: .scale(scale: 0.97, anchor: .top))
     }
 
-    private var coordinateModeBinding: Binding<FixedCoordinateMode> {
-        Binding(
-            get: { coordinateMode },
-            set: { onCoordinateModeChange($0) }
-        )
-    }
-
-    private var coordinateModeSelection: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("Simulation coordinate mode")
-                .font(.subheadline.weight(.semibold))
-
-            Picker("Simulation coordinate mode", selection: coordinateModeBinding) {
-                Text("GCJ-02 correction").tag(FixedCoordinateMode.gcj02)
-                Text("WGS84 unchanged").tag(FixedCoordinateMode.wgs84)
+    /// Opens area drift with a box around this place (or the visible map).
+    private var areaDriftButton: some View {
+        Button(action: onAreaDrift) {
+            HStack(spacing: 8) {
+                Image(systemName: "square.dashed")
+                Text("Area Drift")
             }
-            .pickerStyle(.segmented)
-            .disabled(isWorking)
-
-            Text(
-                recommendedCoordinateMode == .gcj02
-                    ? String(
-                        localized:
-                            "For mainland China, try GCJ-02 first. If the position is off, switch to WGS84."
-                    )
-                    : String(
-                        localized:
-                            "Outside mainland China, try WGS84 first. If the position is off, switch to GCJ-02."
-                    )
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-
-            if isShowingActiveTarget {
-                Text("Switching modes updates the current simulated location immediately.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            .font(.body.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 22)
         }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .tint(.purple)
+        .accessibilityIdentifier("map.areaDrift")
     }
 
     private func routePreviewButton(for mode: RouteMode) -> some View {

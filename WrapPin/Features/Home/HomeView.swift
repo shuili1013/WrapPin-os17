@@ -11,6 +11,13 @@ struct HomeView: View {
     @State private var mapModel = MapViewModel()
     @State private var walkingRoutePlanner = WalkingRoutePlanner()
     @State private var walkingSimulation = WalkingSimulationController()
+    @State private var driftController = AreaDriftController()
+    /// Non-nil while area drift is open (editing the box or drifting).
+    @State private var driftDraft: DriftArea?
+    @State private var isShowingSavedDriftAreas = false
+    /// Bumped on camera changes while editing so the box handles follow. Kept
+    /// in its own observable so only the handles redraw during a pan.
+    @State private var driftEditorCamera = DriftEditorCamera()
     @State private var isShowingDeviceSetup: Bool
     @State private var isShowingSettings: Bool
     @State private var isShowingSavedPlaces = false
@@ -111,6 +118,10 @@ struct HomeView: View {
                 newPhase,
                 deviceSession: appModel.deviceSession
             )
+            driftController.handleDeviceSessionPhase(
+                newPhase,
+                deviceSession: appModel.deviceSession
+            )
 
             switch newPhase {
             case .openingLocalDevVPN, .discovering, .connecting, .active, .stopping:
@@ -148,6 +159,9 @@ struct HomeView: View {
             else { return }
             mapModel.center(on: coordinate)
         }
+        .onChange(of: appModel.coordinateModePreference) { _, _ in
+            applyCoordinateModePreference()
+        }
         .onChange(of: mapModel.selectedLocation?.id) { _, selectedLocationID in
             if let selectedLocation = mapModel.selectedLocation {
                 if case .active(let activeTarget) = appModel.deviceSession.phase,
@@ -182,6 +196,16 @@ struct HomeView: View {
         .sheet(isPresented: $isShowingDeviceSetup) {
             PairingSetupView()
                 .environment(appModel)
+        }
+        .sheet(isPresented: $isShowingSavedDriftAreas) {
+            SavedDriftAreasView(currentAreaID: driftDraft?.id) { area in
+                guard !driftController.isRunning else { return }
+                withAnimation(reduceMotion ? nil : MapAnimation.panel) {
+                    driftDraft = area
+                }
+                frameCamera(on: area)
+            }
+            .environment(appModel)
         }
         .sheet(isPresented: $isShowingSettings) {
             SettingsView()
@@ -246,6 +270,28 @@ struct HomeView: View {
                         .tint(.blue)
                 }
 
+                if let area = driftDraft {
+                    MapPolygon(coordinates: area.corners.map {
+                        CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                    })
+                    .foregroundStyle(.purple.opacity(driftController.isRunning ? 0.10 : 0.16))
+                    .stroke(.purple, style: StrokeStyle(
+                        lineWidth: 3,
+                        dash: driftController.isRunning ? [] : [8, 6]
+                    ))
+                }
+
+                if let coordinate = driftController.currentCoordinate {
+                    Annotation("Drifting location", coordinate: coordinate) {
+                        Image(systemName: "location.circle.fill")
+                            .font(.title.weight(.semibold))
+                            .foregroundStyle(.white, .purple)
+                            .padding(4)
+                            .background(.regularMaterial, in: Circle())
+                            .shadow(color: .black.opacity(0.22), radius: 7, y: 3)
+                    }
+                }
+
                 if let coordinate = walkingSimulation.currentCoordinate {
                     Annotation("Simulated route location", coordinate: coordinate) {
                         Image(
@@ -269,6 +315,19 @@ struct HomeView: View {
                 let heading = (context.camera.heading / 2).rounded() * 2
                 if heading != roundedMapHeading {
                     roundedMapHeading = heading
+                }
+                if driftDraft != nil {
+                    driftEditorCamera.revision &+= 1
+                }
+            }
+            .overlay {
+                if isEditingDriftArea {
+                    DriftBoxEditor(
+                        area: $driftDraft,
+                        proxy: proxy,
+                        camera: driftEditorCamera
+                    )
+                    .transition(.opacity)
                 }
             }
             .onTapGesture { point in
@@ -370,7 +429,7 @@ struct HomeView: View {
 
     private var hasSelectedSessionContent: Bool {
         mapModel.selectedLocation != nil || walkingRoutePlanner.route != nil
-            || isLocatingRealLocationAfterRestoration
+            || isLocatingRealLocationAfterRestoration || driftDraft != nil
     }
 
     private func compactControls(availableHeight: CGFloat) -> some View {
@@ -713,13 +772,20 @@ struct HomeView: View {
     /// True when `selectionCard` shows `LocationSelectionCard`.
     private var usesSelfScrollingSelectionCard: Bool {
         !isLocatingRealLocationAfterRestoration
+            && driftDraft == nil
             && !(walkingRoutePlanner.route != nil && walkingRoutePlanner.destination != nil)
+    }
+
+    private var isEditingDriftArea: Bool {
+        driftDraft != nil && !driftController.isRunning
     }
 
     @ViewBuilder
     private func selectionCard(detailsCollapsed: Binding<Bool>) -> some View {
         if isLocatingRealLocationAfterRestoration {
             RestoringRealLocationCard()
+        } else if let area = driftDraft {
+            areaDriftPanel(for: area)
         } else if let route = walkingRoutePlanner.route,
             let destination = walkingRoutePlanner.destination
         {
@@ -770,29 +836,7 @@ struct HomeView: View {
                 tunnelAppInstallURL: appModel.selectedTunnelAppInstallURL,
                 previewingRouteMode: walkingRoutePlanner.isLoading ? walkingRoutePlanner.mode : nil,
                 routeError: walkingRoutePlanner.errorMessage,
-                coordinateMode: fixedCoordinateMode,
-                recommendedCoordinateMode: mapModel.selectedLocation.map(
-                    FixedCoordinateMode.recommended
-                ) ?? .wgs84,
                 isCollapsed: detailsCollapsed,
-                onCoordinateModeChange: { mode in
-                    fixedCoordinateMode = mode
-                    if let target = mapModel.selectedLocation {
-                        appModel.rememberManualCoordinateMode(mode, for: target)
-                    }
-                    guard
-                        let target = mapModel.selectedLocation,
-                        case .active(let activeTarget) = appModel.deviceSession.phase,
-                        activeTarget.id == target.id,
-                        appModel.activeFixedCoordinateMode != mode
-                    else { return }
-                    Task {
-                        await appModel.startLocationSession(
-                            at: target,
-                            coordinateMode: mode
-                        )
-                    }
-                },
                 onToggleFavourite: {
                     guard !mapModel.isResolvingAddress else { return }
                     guard let target = mapModel.selectedLocation else { return }
@@ -817,6 +861,9 @@ struct HomeView: View {
                             mapModel.show(walkingRoutePlanner.routes)
                         }
                     }
+                },
+                onAreaDrift: {
+                    beginAreaDrift()
                 },
                 onStart: {
                     guard !mapModel.isResolvingAddress else { return }
@@ -1050,11 +1097,143 @@ struct HomeView: View {
         )
     }
 
+    // MARK: Area drift
+
+    @ViewBuilder
+    private func areaDriftPanel(for area: DriftArea) -> some View {
+        AreaDriftPanel(
+            area: area,
+            settings: driftController.isRunning ? driftController.settings : appModel.driftSettings,
+            phase: driftController.phase,
+            isPaired: isPaired,
+            isSaved: appModel.savedDriftAreas.contains(area),
+            savedAreaCount: appModel.savedDriftAreas.count,
+            isPausedAtWaypoint: driftController.isPausedAtWaypoint,
+            onSettingsChange: { settings in
+                appModel.setDriftSettings(settings)
+                if driftController.isRunning {
+                    driftController.updateSettings(appModel.driftSettings)
+                }
+            },
+            onStart: {
+                guard let area = driftDraft else { return }
+                walkingSimulation.reset()
+                walkingRoutePlanner.clear()
+                shouldRefreshRealLocationWhenActive = false
+                Task {
+                    await driftController.start(
+                        area: area,
+                        settings: appModel.driftSettings,
+                        coordinateMode: appModel.coordinateMode(for: LocationTarget(
+                            name: area.name,
+                            subtitle: "",
+                            latitude: area.centerLatitude,
+                            longitude: area.centerLongitude
+                        )),
+                        using: appModel
+                    )
+                }
+            },
+            onTogglePause: driftController.togglePause,
+            onStopDrifting: {
+                driftController.stopDrifting()
+            },
+            onStopAndRestore: {
+                shouldClearLocationAfterRestoration = true
+                driftController.stop(using: appModel.deviceSession)
+            },
+            onSave: { name in
+                guard var area = driftDraft else { return }
+                area.name = name
+                driftDraft = area
+                appModel.saveDriftArea(area)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            },
+            onShowSaved: {
+                isShowingSavedDriftAreas = true
+            },
+            onFitToView: fitDriftAreaToVisibleMap,
+            onClose: {
+                guard !driftController.isRunning else { return }
+                withAnimation(reduceMotion ? nil : MapAnimation.panel) {
+                    driftController.reset()
+                    driftDraft = nil
+                }
+            }
+        )
+    }
+
+    /// Opens area drift with a 200 m box around the selected place, or around
+    /// the middle of the visible map when nothing is selected.
+    private func beginAreaDrift() {
+        guard !walkingSimulation.locksDestination else { return }
+        let center = mapModel.selectedLocation?.coordinate
+            ?? cameraTracker.camera?.centerCoordinate
+        guard let center else { return }
+        walkingRoutePlanner.clear()
+        walkingSimulation.reset()
+        let name = mapModel.selectedLocation?.name ?? String(localized: "Drift Area")
+        let area = DriftArea(
+            name: name,
+            centerLatitude: center.latitude,
+            centerLongitude: center.longitude,
+            widthMetres: 200,
+            heightMetres: 200
+        )
+        withAnimation(reduceMotion ? nil : MapAnimation.panel) {
+            driftDraft = area
+        }
+        frameCamera(on: area)
+    }
+
+    private func frameCamera(on area: DriftArea) {
+        let region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: area.centerLatitude, longitude: area.centerLongitude),
+            latitudinalMeters: area.heightMetres * 3,
+            longitudinalMeters: area.widthMetres * 3
+        )
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.5)) {
+            mapModel.cameraPosition = .region(region)
+        }
+    }
+
+    /// Resizes the box to the middle part of what is on screen.
+    private func fitDriftAreaToVisibleMap() {
+        guard var area = driftDraft, let camera = cameraTracker.camera else { return }
+        // MapCamera.distance is the eye altitude; roughly the visible height.
+        let side = DriftArea.clampSide(camera.distance * 0.35)
+        area.centerLatitude = camera.centerCoordinate.latitude
+        area.centerLongitude = camera.centerCoordinate.longitude
+        area.widthMetres = side
+        area.heightMetres = side
+        withAnimation(reduceMotion ? nil : MapAnimation.panel) {
+            driftDraft = area
+        }
+    }
+
+    /// Settings changed the coordinate mode: re-apply it to the selection and,
+    /// for a fixed location session, to the iPhone right away.
+    private func applyCoordinateModePreference() {
+        if let selected = mapModel.selectedLocation {
+            fixedCoordinateMode = appModel.coordinateMode(for: selected)
+        }
+        guard
+            !walkingSimulation.locksDestination,
+            !driftController.isRunning,
+            case .active(let activeTarget) = appModel.deviceSession.phase
+        else { return }
+        let mode = appModel.coordinateMode(for: activeTarget)
+        guard appModel.activeFixedCoordinateMode != mode else { return }
+        Task {
+            await appModel.startLocationSession(at: activeTarget, coordinateMode: mode)
+        }
+    }
+
     private func dropPin(at coordinate: CLLocationCoordinate2D) {
         if isSearchFocused {
             isSearchFocused = false
         }
-        guard !walkingSimulation.locksDestination else { return }
+        guard !walkingSimulation.locksDestination, driftDraft == nil else { return }
         Task { await mapModel.selectDroppedPin(at: coordinate) }
     }
 

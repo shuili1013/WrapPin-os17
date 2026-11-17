@@ -26,6 +26,22 @@ enum FixedCoordinateMode: String, CaseIterable, Codable, Sendable {
     }
 }
 
+/// The user's global choice in Settings. Automatic keeps the regional
+/// recommendation (GCJ-02 inside the mainland China envelope, WGS84 elsewhere).
+enum CoordinateModePreference: String, CaseIterable, Codable, Sendable {
+    case automatic
+    case wgs84
+    case gcj02
+
+    func mode(for target: LocationTarget) -> FixedCoordinateMode {
+        switch self {
+        case .automatic: .recommended(for: target)
+        case .wgs84: .wgs84
+        case .gcj02: .gcj02
+        }
+    }
+}
+
 enum FixedCoordinateTransform {
     private static let semiMajorAxis = 6_378_245.0
     private static let eccentricitySquared = 0.00669342162296594323

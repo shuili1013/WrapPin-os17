@@ -31,6 +31,19 @@ struct WrapPinActivityAttributes: ActivityAttributes {
         var hasArrived: Bool
     }
 
+    enum DriftKind: String, Codable, Hashable {
+        case wander
+        case jump
+        case jitter
+    }
+
+    /// Present only while area drift is running.
+    struct DriftStatus: Codable, Hashable {
+        var areaName: String
+        var kind: DriftKind
+        var isPaused: Bool
+    }
+
     struct ContentState: Codable, Hashable {
         var placeName: String
         var subtitle: String
@@ -39,6 +52,7 @@ struct WrapPinActivityAttributes: ActivityAttributes {
         var status: Status
         var startedAt: Date
         var route: RouteProgress?
+        var drift: DriftStatus?
     }
 
     /// Identifies one location session; not shown to the user.

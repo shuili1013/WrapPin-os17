@@ -885,3 +885,54 @@
 "Search above or long-press anywhere on the map." = "在上方搜索，或长按地图上的任意位置。";
 "Search for a place or long-press the map, then start a fixed location or preview a walking or driving route." = "搜索地点或长按地图，即可模拟固定位置，也可以先预览步行或驾车路线。";
 "Long-press the map" = "长按地图";
+
+/* Coordinate mode in Settings */
+"Location" = "定位";
+"Coordinate Mode" = "坐标模式";
+"Automatic" = "自动";
+"WGS84" = "WGS84";
+"GCJ-02" = "GCJ-02";
+"Automatic uses GCJ-02 in mainland China and WGS84 everywhere else, including Taiwan. If the simulated position is offset from the map, try the other mode. Changing it updates an active fixed location right away." = "自动：在中国大陆使用 GCJ-02，其他地区（包括台湾）使用 WGS84。若模拟位置与地图有偏差，可改用另一种模式。正在模拟固定位置时，修改会立即生效。";
+
+/* Area drift */
+"Area Drift" = "范围偏移";
+"Drift Area" = "偏移范围";
+"Close Area Drift" = "关闭范围偏移";
+"Drag the corners to resize the box, or the centre handle to move it." = "拖动四个角调整范围大小，拖动中间的圆点移动范围。";
+"Draw a box on the map, then tap Save Area to keep it here." = "先在地图上框出范围，再点“保存范围”，就会出现在这里。";
+"No Saved Areas" = "没有已保存的范围";
+"Drift paused" = "偏移已暂停";
+"Drift style" = "偏移方式";
+"Drifting inside the area" = "正在范围内偏移";
+"Drifting location" = "偏移中的位置";
+"Every" = "间隔";
+"Fit the box to the visible map" = "让范围符合当前地图画面";
+"Jump" = "跳点";
+"Wander" = "漫游";
+"Wobble" = "微飘";
+"Jumping around the box" = "正在范围内跳点";
+"Wandering in the box" = "正在范围内漫游";
+"Wobbling in place" = "正在原地微飘";
+"Stopped for a moment" = "暂时停留中";
+"Jumps straight to a random point inside the box at a fixed interval." = "每隔固定时间，直接跳到范围内的随机位置。";
+"Walks to random points inside the box and sometimes stops for a while." = "以步行方式走到范围内的随机地点，偶尔停留一阵子。";
+"Wobbles gently around the centre of the box, like GPS noise." = "在范围中心附近轻微晃动，就像 GPS 误差。";
+"Speed" = "速度";
+"Longest stop" = "最长停留";
+"No stops" = "不停留";
+"Radius" = "半径";
+"%d s" = "%d 秒";
+"Pair this iPhone before starting area drift." = "请先配对这台 iPhone，再开始范围偏移。";
+"Pair this iPhone in Device Setup first." = "请先在“设备连接”中配对这台 iPhone。";
+"Rename Area" = "重命名范围";
+"Save Area" = "保存范围";
+"Saved" = "已保存";
+"Saved Areas" = "已存范围";
+"Saved Areas (%d)" = "已存范围（%d）";
+"Saved areas can be reused from the list next time." = "保存后，下次可以直接从列表选用。";
+"Start Drifting" = "开始偏移";
+"Stay Here" = "停在这里";
+"Stop and restore the real location?" = "要停止并恢复真实位置吗？";
+"Stopping…" = "正在停止…";
+"The active location session ended while drifting." = "偏移过程中定位会话已结束。";
+"WrapPin could not start area drift." = "WrapPin 无法开始范围偏移。";

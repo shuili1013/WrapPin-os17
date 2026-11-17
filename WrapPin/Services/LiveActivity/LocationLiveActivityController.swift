@@ -27,6 +27,11 @@ final class LocationLiveActivityController {
         RouteProgressBoard.shared.onChange = { [weak self] route in
             self?.routeProgressChanged(route)
         }
+        RouteProgressBoard.shared.onDriftChange = { [weak self] drift in
+            guard let self, var state = self.lastState else { return }
+            state.drift = drift
+            self.show(state)
+        }
         // A crash or force-quit can leave an activity from an earlier run.
         Task {
             for stale in Activity<WrapPinActivityAttributes>.activities {
@@ -53,7 +58,8 @@ final class LocationLiveActivityController {
                 longitude: target.longitude,
                 status: .active,
                 startedAt: startedAt ?? Date(),
-                route: RouteProgressBoard.shared.current
+                route: RouteProgressBoard.shared.current,
+                drift: RouteProgressBoard.shared.currentDrift
             ))
         case .openingLocalDevVPN, .discovering, .connecting:
             // Only an already-running session shows reconnecting.
@@ -85,9 +91,10 @@ final class LocationLiveActivityController {
         // progress ticks are coalesced.
         let isImportant = previous == nil
             || previous?.status != state.status
-            || (previous?.placeName != state.placeName && previous?.route == nil)
+            || (previous?.placeName != state.placeName && previous?.route == nil && state.drift == nil)
             || previous?.route?.isPaused != state.route?.isPaused
             || previous?.route?.hasArrived != state.route?.hasArrived
+            || previous?.drift != state.drift
             || (previous?.route == nil) != (state.route == nil)
         let elapsed = Date().timeIntervalSince(lastPushDate)
         if isImportant || elapsed >= minimumRoutineInterval {

@@ -15,4 +15,13 @@ final class RouteProgressBoard {
         current = progress
         onChange?(progress)
     }
+
+    private(set) var currentDrift: WrapPinActivityAttributes.DriftStatus?
+    var onDriftChange: ((WrapPinActivityAttributes.DriftStatus?) -> Void)?
+
+    func publishDrift(_ drift: WrapPinActivityAttributes.DriftStatus?) {
+        guard drift != currentDrift else { return }
+        currentDrift = drift
+        onDriftChange?(drift)
+    }
 }

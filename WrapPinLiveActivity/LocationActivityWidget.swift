@@ -111,7 +111,12 @@ private struct LockScreenView: View {
                         .font(.headline)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    if state.route == nil {
+                    if state.drift != nil {
+                        Text(coordinateText(state))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(1)
+                    } else if state.route == nil {
                         Text(state.subtitle.isEmpty ? coordinateText(state) : state.subtitle)
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.7))
@@ -194,6 +199,14 @@ private struct StatusIcon: View {
 
     private var symbol: String {
         if state.status == .reconnecting { return "arrow.triangle.2.circlepath" }
+        if let drift = state.drift {
+            if drift.isPaused { return "pause.circle.fill" }
+            switch drift.kind {
+            case .wander: return "figure.walk.motion"
+            case .jump: return "sparkles"
+            case .jitter: return "dot.radiowaves.left.and.right"
+            }
+        }
         guard let route = state.route else { return "location.fill" }
         if route.hasArrived { return "flag.checkered" }
         if route.isPaused { return "pause.circle.fill" }
@@ -220,11 +233,19 @@ private struct ElapsedTime: View {
 }
 
 private func headline(_ state: State) -> String {
-    state.route?.destinationName ?? state.placeName
+    state.drift?.areaName ?? state.route?.destinationName ?? state.placeName
 }
 
 private func statusTitle(_ state: State) -> LocalizedStringKey {
     if state.status == .reconnecting { return "Reconnecting…" }
+    if let drift = state.drift {
+        if drift.isPaused { return "Drift paused" }
+        switch drift.kind {
+        case .wander: return "Wandering in area"
+        case .jump: return "Jumping in area"
+        case .jitter: return "Drifting in place"
+        }
+    }
     guard let route = state.route else { return "Simulating location" }
     if route.hasArrived { return "Arrived" }
     if route.isPaused { return "Paused" }
@@ -237,6 +258,7 @@ private func trailingCaption(_ state: State) -> LocalizedStringKey {
 
 private func accent(_ state: State) -> Color {
     if state.status == .reconnecting { return .orange }
+    if let drift = state.drift { return drift.isPaused ? .yellow : .purple }
     if let route = state.route { return routeAccent(route) }
     return .blue
 }

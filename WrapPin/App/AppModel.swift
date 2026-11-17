@@ -7,10 +7,13 @@ import Observation
 final class AppModel {
     private static let onboardingKey = "hasCompletedOnboarding"
     private static let favouritesKey = "favouriteLocations"
+    private static let savedDriftAreasKey = "savedDriftAreas"
+    private static let driftSettingsKey = "driftSettings"
     private static let hasSeenFavouriteReorderHintKey = "hasSeenFavouriteReorderHint"
     private static let historyKey = "locationHistory"
     private static let coordinateModeMemoryKey = "coordinateModeMemory"
     private static let appearanceKey = "appAppearance"
+    private static let coordinateModePreferenceKey = "coordinateModePreference"
     private static let mapDisplayStyleKey = "mapDisplayStyle"
     private static let tunnelHandoffAppKey = "tunnelHandoffApp"
     private static let usesBuiltInTunnelKey = "usesBuiltInTunnel"
@@ -27,9 +30,12 @@ final class AppModel {
     var pairingImportError: String?
     private(set) var selectedTarget: LocationTarget?
     private(set) var favouriteLocations: [LocationTarget]
+    private(set) var savedDriftAreas: [DriftArea]
+    private(set) var driftSettings: DriftSettings
     private(set) var hasSeenFavouriteReorderHint: Bool
     private(set) var locationHistory: [LocationTarget]
     private(set) var appearance: AppAppearance
+    private(set) var coordinateModePreference: CoordinateModePreference
     private(set) var mapDisplayStyle: MapDisplayStyle
     private(set) var tunnelHandoffApp: TunnelHandoffApp
     private(set) var usesBuiltInTunnel: Bool
@@ -99,9 +105,15 @@ final class AppModel {
         self.favouriteLocations = Self.locations(forKey: Self.favouritesKey, in: preferences)
         self.hasSeenFavouriteReorderHint = preferences.bool(forKey: Self.hasSeenFavouriteReorderHintKey)
         self.locationHistory = Self.locations(forKey: Self.historyKey, in: preferences)
+        self.savedDriftAreas = Self.decoded([DriftArea].self, forKey: Self.savedDriftAreasKey, in: preferences) ?? []
+        self.driftSettings = (Self.decoded(DriftSettings.self, forKey: Self.driftSettingsKey, in: preferences)
+            ?? DriftSettings()).sanitised()
         self.coordinateModeMemory = Self.coordinateModeMemory(in: preferences)
         self.appearance = AppAppearance(
             rawValue: preferences.string(forKey: Self.appearanceKey) ?? ""
+        ) ?? .automatic
+        self.coordinateModePreference = CoordinateModePreference(
+            rawValue: preferences.string(forKey: Self.coordinateModePreferenceKey) ?? ""
         ) ?? .automatic
         self.mapDisplayStyle = MapDisplayStyle(
             rawValue: preferences.string(forKey: Self.mapDisplayStyleKey) ?? ""
@@ -187,8 +199,14 @@ final class AppModel {
         }
     }
 
+    /// The coordinate mode now comes from the single choice in Settings.
     func coordinateMode(for target: LocationTarget) -> FixedCoordinateMode {
-        coordinateModeMemory.mode(for: target)
+        coordinateModePreference.mode(for: target)
+    }
+
+    func setCoordinateModePreference(_ preference: CoordinateModePreference) {
+        coordinateModePreference = preference
+        preferences.set(preference.rawValue, forKey: Self.coordinateModePreferenceKey)
     }
 
     func rememberManualCoordinateMode(_ mode: FixedCoordinateMode, for target: LocationTarget) {
@@ -264,6 +282,52 @@ final class AppModel {
         preferences.removeObject(forKey: Self.favouritesKey)
         WrapPinShortcuts.updateAppShortcutParameters()
         saveCoordinateModeMemory()
+    }
+
+    // MARK: Area drift
+
+    /// Saves a new area, or replaces the stored one with the same ID.
+    func saveDriftArea(_ area: DriftArea) {
+        if let index = savedDriftAreas.firstIndex(where: { $0.id == area.id }) {
+            savedDriftAreas[index] = area
+        } else {
+            savedDriftAreas.insert(area, at: 0)
+        }
+        persistDriftAreas()
+    }
+
+    func deleteDriftAreas(withIDs ids: Set<UUID>) {
+        savedDriftAreas.removeAll { ids.contains($0.id) }
+        persistDriftAreas()
+    }
+
+    func renameDriftArea(id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = savedDriftAreas.firstIndex(where: { $0.id == id }) else { return }
+        savedDriftAreas[index].name = trimmed
+        persistDriftAreas()
+    }
+
+    func setDriftSettings(_ settings: DriftSettings) {
+        driftSettings = settings.sanitised()
+        if let data = try? JSONEncoder().encode(driftSettings) {
+            preferences.set(data, forKey: Self.driftSettingsKey)
+        }
+    }
+
+    private func persistDriftAreas() {
+        if let data = try? JSONEncoder().encode(savedDriftAreas) {
+            preferences.set(data, forKey: Self.savedDriftAreasKey)
+        }
+    }
+
+    private static func decoded<Value: Decodable>(
+        _ type: Value.Type,
+        forKey key: String,
+        in preferences: UserDefaults
+    ) -> Value? {
+        guard let data = preferences.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
     }
 
     func setAppearance(_ appearance: AppAppearance) {
