@@ -772,7 +772,6 @@ struct HomeView: View {
     /// True when `selectionCard` shows `LocationSelectionCard`.
     private var usesSelfScrollingSelectionCard: Bool {
         !isLocatingRealLocationAfterRestoration
-            && driftDraft == nil
             && !(walkingRoutePlanner.route != nil && walkingRoutePlanner.destination != nil)
     }
 
@@ -785,7 +784,7 @@ struct HomeView: View {
         if isLocatingRealLocationAfterRestoration {
             RestoringRealLocationCard()
         } else if let area = driftDraft {
-            areaDriftPanel(for: area)
+            areaDriftPanel(for: area, detailsCollapsed: detailsCollapsed)
         } else if let route = walkingRoutePlanner.route,
             let destination = walkingRoutePlanner.destination
         {
@@ -1100,7 +1099,7 @@ struct HomeView: View {
     // MARK: Area drift
 
     @ViewBuilder
-    private func areaDriftPanel(for area: DriftArea) -> some View {
+    private func areaDriftPanel(for area: DriftArea, detailsCollapsed: Binding<Bool>) -> some View {
         AreaDriftPanel(
             area: area,
             settings: driftController.isRunning ? driftController.settings : appModel.driftSettings,
@@ -1152,14 +1151,14 @@ struct HomeView: View {
             onShowSaved: {
                 isShowingSavedDriftAreas = true
             },
-            onFitToView: fitDriftAreaToVisibleMap,
             onClose: {
                 guard !driftController.isRunning else { return }
                 withAnimation(reduceMotion ? nil : MapAnimation.panel) {
                     driftController.reset()
                     driftDraft = nil
                 }
-            }
+            },
+            isCollapsed: detailsCollapsed
         )
     }
 
@@ -1194,20 +1193,6 @@ struct HomeView: View {
         )
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.5)) {
             mapModel.cameraPosition = .region(region)
-        }
-    }
-
-    /// Resizes the box to the middle part of what is on screen.
-    private func fitDriftAreaToVisibleMap() {
-        guard var area = driftDraft, let camera = cameraTracker.camera else { return }
-        // MapCamera.distance is the eye altitude; roughly the visible height.
-        let side = DriftArea.clampSide(camera.distance * 0.35)
-        area.centerLatitude = camera.centerCoordinate.latitude
-        area.centerLongitude = camera.centerCoordinate.longitude
-        area.widthMetres = side
-        area.heightMetres = side
-        withAnimation(reduceMotion ? nil : MapAnimation.panel) {
-            driftDraft = area
         }
     }
 

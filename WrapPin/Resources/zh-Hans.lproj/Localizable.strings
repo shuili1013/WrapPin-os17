@@ -898,7 +898,7 @@
 "Area Drift" = "范围偏移";
 "Drift Area" = "偏移范围";
 "Close Area Drift" = "关闭范围偏移";
-"Drag the corners to resize the box, or the centre handle to move it." = "拖动四个角调整范围大小，拖动中间的圆点移动范围。";
+"Drag the corners to resize, the centre to move, and the top handle to rotate." = "拖动四个角调整大小，拖动中间的圆点移动，拖动上方的把手旋转角度。";
 "Draw a box on the map, then tap Save Area to keep it here." = "先在地图上框出范围，再点“保存范围”，就会出现在这里。";
 "No Saved Areas" = "没有已保存的范围";
 "Drift paused" = "偏移已暂停";
@@ -906,7 +906,6 @@
 "Drifting inside the area" = "正在范围内偏移";
 "Drifting location" = "偏移中的位置";
 "Every" = "间隔";
-"Fit the box to the visible map" = "让范围符合当前地图画面";
 "Jump" = "跳点";
 "Wander" = "漫游";
 "Wobble" = "微飘";

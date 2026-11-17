@@ -6,6 +6,7 @@ import SwiftUI
 /// controls, and saves or loads boxes.
 struct AreaDriftPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.mapPanelMaximumHeight) private var maximumHeight
     let area: DriftArea
     let settings: DriftSettings
     let phase: AreaDriftPhase
@@ -20,8 +21,8 @@ struct AreaDriftPanel: View {
     let onStopAndRestore: () -> Void
     let onSave: (String) -> Void
     let onShowSaved: () -> Void
-    let onFitToView: () -> Void
     let onClose: () -> Void
+    @Binding var isCollapsed: Bool
 
     @State private var isNaming = false
     @State private var draftName = ""
@@ -37,33 +38,13 @@ struct AreaDriftPanel: View {
     private var isEditing: Bool { !isRunning }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-
-            if isEditing {
-                Label("Drag the corners to resize the box, or the centre handle to move it.", systemImage: "hand.draw")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .transition(.opacity)
-            }
-
-            modePicker
-            modeControls
-
-            if case .failed(let message) = phase {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .transition(.opacity)
-            }
-
-            actions
-            storageRow
+        VStack(spacing: 0) {
+            MapPanelDisclosure(isCollapsed: $isCollapsed)
+                .padding(.horizontal, 16)
+            scrollableContent
         }
-        .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: .black.opacity(0.14), radius: 18, y: 8)
         .animation(reduceMotion ? nil : MapAnimation.snappy, value: phase)
         .animation(reduceMotion ? nil : MapAnimation.snappy, value: settings.mode)
@@ -86,6 +67,57 @@ struct AreaDriftPanel: View {
             Button("Cancel", role: .cancel) {}
         }
         .accessibilityIdentifier("map.areaDriftPanel")
+    }
+
+    /// The disclosure header stays put; the rest scrolls when it does not fit.
+    @ViewBuilder
+    private var scrollableContent: some View {
+        let content = details
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 16)
+        if let maximumHeight {
+            MapPanelViewport(maximumHeight: max(120, maximumHeight - 44)) {
+                content
+            }
+        } else {
+            content
+        }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header
+
+            if !isCollapsed {
+                Group {
+                    if isEditing {
+                        Label("Drag the corners to resize, the centre to move, and the top handle to rotate.", systemImage: "hand.draw")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    modePicker
+                    modeControls
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            if case .failed(let message) = phase {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+            }
+
+            actions
+
+            if !isCollapsed {
+                storageRow
+                    .transition(.opacity)
+            }
+        }
     }
 
     private var header: some View {
@@ -235,17 +267,14 @@ struct AreaDriftPanel: View {
     @ViewBuilder
     private var actions: some View {
         VStack(spacing: 10) {
-            if isRunning {
-                Button(action: onTogglePause) {
-                    actionLabel(
-                        phase == .paused ? String(localized: "Resume") : String(localized: "Pause"),
-                        symbol: phase == .paused ? "play.fill" : "pause.fill"
-                    )
+            if isRunning && isCollapsed {
+                // Collapsed: both essential actions on one row.
+                HStack(spacing: 10) {
+                    pauseButton
+                    restoreButton
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(.purple)
-                .disabled(phase == .preparing || phase == .stopping)
+            } else if isRunning {
+                pauseButton
 
                 HStack(spacing: 10) {
                     Button(action: onStopDrifting) {
@@ -255,15 +284,7 @@ struct AreaDriftPanel: View {
                     .controlSize(.large)
                     .disabled(phase == .preparing || phase == .stopping)
 
-                    Button(role: .destructive) {
-                        isConfirmingRestore = true
-                    } label: {
-                        actionLabel(String(localized: "Stop & Restore"), symbol: "stop.circle.fill")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .tint(.red)
-                    .disabled(phase == .stopping)
+                    restoreButton
                 }
             } else {
                 Button(action: onStart) {
@@ -284,47 +305,72 @@ struct AreaDriftPanel: View {
         }
     }
 
+    private var pauseButton: some View {
+        Button(action: onTogglePause) {
+            actionLabel(
+                phase == .paused ? String(localized: "Resume") : String(localized: "Pause"),
+                symbol: phase == .paused ? "play.fill" : "pause.fill"
+            )
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(.purple)
+        .disabled(phase == .preparing || phase == .stopping)
+    }
+
+    private var restoreButton: some View {
+        Button(role: .destructive) {
+            isConfirmingRestore = true
+        } label: {
+            actionLabel(String(localized: "Stop & Restore"), symbol: "stop.circle.fill")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .tint(.red)
+        .disabled(phase == .stopping)
+    }
+
     private var storageRow: some View {
         HStack(spacing: 10) {
             Button {
                 draftName = area.name
                 isNaming = true
             } label: {
-                Group {
+                HStack(spacing: 6) {
+                    Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
+                        .contentTransition(.symbolEffect(.replace))
                     if isSaved {
-                        Label("Saved", systemImage: "bookmark.fill")
+                        Text("Saved")
                     } else {
-                        Label("Save Area", systemImage: "bookmark")
+                        Text("Save Area")
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: 36)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
 
             Button(action: onShowSaved) {
-                Label {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.stack")
+                    Text("Saved Areas")
                     if savedAreaCount > 0 {
-                        Text(String(format: NSLocalizedString("Saved Areas (%d)", comment: ""), savedAreaCount))
-                    } else {
-                        Text("Saved Areas")
+                        Text(verbatim: "\(savedAreaCount)")
+                            .font(.caption2.weight(.bold).monospacedDigit())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.purple.opacity(0.25), in: Capsule())
                     }
-                } icon: {
-                    Image(systemName: "list.bullet")
                 }
-                .frame(maxWidth: .infinity, minHeight: 36)
-            }
-            .buttonStyle(.bordered)
-
-            if isEditing {
-                Button(action: onFitToView) {
-                    Image(systemName: "viewfinder")
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel("Fit the box to the visible map")
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity)
             }
         }
-        .font(.subheadline.weight(.medium))
+        .font(.subheadline.weight(.semibold))
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.regular)
+        .tint(.purple)
     }
 
     private func actionLabel(_ title: String, symbol: String) -> some View {
@@ -377,7 +423,9 @@ struct AreaDriftPanel: View {
         func format(_ metres: Double) -> String {
             metres >= 1_000 ? String(format: "%.2f km", metres / 1_000) : String(format: "%.0f m", metres)
         }
-        return "\(format(area.widthMetres)) × \(format(area.heightMetres))"
+        let size = "\(format(area.widthMetres)) × \(format(area.heightMetres))"
+        let angle = Int(area.rotationDegrees.rounded()) % 360
+        return angle == 0 ? size : "\(size) · \(angle)°"
     }
 }
 
@@ -396,9 +444,10 @@ final class DriftEditorCamera {
     var revision = 0
 }
 
-/// Corner and centre handles drawn over the map while editing the box. The
-/// box itself is a MapPolygon in the map content, so it stays glued to the
-/// map; these handles are recomputed from the map proxy on every camera change.
+/// Corner, centre and rotation handles drawn over the map while editing the
+/// box. The box itself is a MapPolygon in the map content, so it stays glued
+/// to the map; these handles are recomputed from the map proxy on every
+/// camera change.
 struct DriftBoxEditor: View {
     @Binding var area: DriftArea?
     let proxy: MapProxy
@@ -406,51 +455,81 @@ struct DriftBoxEditor: View {
     let camera: DriftEditorCamera
 
     private static let space = "driftBoxEditor"
+    /// Screen distance from the top edge to the rotation handle.
+    private static let rotationStalk: CGFloat = 44
+    private static let snapDegrees: Double = 4
+
     @State private var moveStart: (center: CGPoint, area: DriftArea)?
     @State private var resizeAnchor: CLLocationCoordinate2D?
+    @State private var lastSnappedAngle: Double?
 
     var body: some View {
         GeometryReader { _ in
             // Reading the revision makes pans and zooms move the handles.
             let _ = camera.revision
             if let area, let points = screenCorners(of: area) {
-                let center = CGPoint(
-                    x: points.map(\.x).reduce(0, +) / 4,
-                    y: points.map(\.y).reduce(0, +) / 4
-                )
+                let center = midpoint(points)
+                let topMiddle = midpoint([points[0], points[1]])
+                let rotationPoint = rotationHandlePoint(center: center, topMiddle: topMiddle)
                 ZStack {
+                    Path { path in
+                        path.move(to: topMiddle)
+                        path.addLine(to: rotationPoint)
+                    }
+                    .stroke(.purple, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
+                    .allowsHitTesting(false)
+
                     ForEach(0..<4, id: \.self) { index in
-                        handle(symbol: nil)
+                        handle(size: 22, symbol: nil)
                             .position(points[index])
                             .gesture(resizeGesture(corner: index, area: area))
                     }
-                    handle(symbol: "arrow.up.and.down.and.arrow.left.and.right")
+                    handle(size: 40, symbol: "arrow.up.and.down.and.arrow.left.and.right")
                         .position(center)
                         .gesture(moveGesture(center: center, area: area))
+                    handle(size: 32, symbol: "arrow.clockwise")
+                        .position(rotationPoint)
+                        .gesture(rotateGesture(area: area))
                 }
             }
         }
         .coordinateSpace(name: Self.space)
     }
 
-    private func handle(symbol: String?) -> some View {
+    private func handle(size: CGFloat, symbol: String?) -> some View {
         ZStack {
             Circle()
                 .fill(.white)
-                .frame(width: symbol == nil ? 22 : 40, height: symbol == nil ? 22 : 40)
                 .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
             Circle()
                 .strokeBorder(.purple, lineWidth: 3)
-                .frame(width: symbol == nil ? 22 : 40, height: symbol == nil ? 22 : 40)
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: size * 0.38, weight: .bold))
                     .foregroundStyle(.purple)
             }
         }
+        .frame(width: size, height: size)
         // Generous touch target around the small visual handle.
         .frame(width: 52, height: 52)
         .contentShape(Circle())
+    }
+
+    private func midpoint(_ points: [CGPoint]) -> CGPoint {
+        CGPoint(
+            x: points.map(\.x).reduce(0, +) / CGFloat(points.count),
+            y: points.map(\.y).reduce(0, +) / CGFloat(points.count)
+        )
+    }
+
+    private func rotationHandlePoint(center: CGPoint, topMiddle: CGPoint) -> CGPoint {
+        let dx = topMiddle.x - center.x
+        let dy = topMiddle.y - center.y
+        let length = max((dx * dx + dy * dy).squareRoot(), 0.001)
+        return CGPoint(
+            x: topMiddle.x + dx / length * Self.rotationStalk,
+            y: topMiddle.y + dy / length * Self.rotationStalk
+        )
     }
 
     private func screenCorners(of area: DriftArea) -> [CGPoint]? {
@@ -475,11 +554,13 @@ struct DriftBoxEditor: View {
                     let anchor = resizeAnchor,
                     let dragged = proxy.convert(value.location, from: .local)
                 else { return }
+                // Measured along the box's own axes, so a rotated box keeps its angle.
                 self.area = DriftArea(
                     id: area.id,
                     name: area.name,
                     corner: (anchor.latitude, anchor.longitude),
                     corner: (dragged.latitude, dragged.longitude),
+                    rotationDegrees: area.rotationDegrees,
                     createdAt: area.createdAt
                 )
             }
@@ -499,11 +580,37 @@ struct DriftBoxEditor: View {
                     y: start.center.y + value.translation.height
                 )
                 guard let coordinate = proxy.convert(point, from: .local) else { return }
-                var moved = start.area
+                var moved = self.area ?? start.area
                 moved.centerLatitude = coordinate.latitude
                 moved.centerLongitude = coordinate.longitude
                 self.area = moved
             }
             .onEnded { _ in moveStart = nil }
+    }
+
+    /// Turns the box so its top edge faces the finger; snaps to 0°/90°/180°/270°.
+    private func rotateGesture(area: DriftArea) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
+            .onChanged { value in
+                guard
+                    let current = self.area,
+                    let finger = proxy.convert(value.location, from: .local)
+                else { return }
+                var angle = current.bearingDegrees(to: finger.latitude, longitude: finger.longitude)
+                let nearestRight = (angle / 90).rounded() * 90
+                if abs(angle - nearestRight) <= Self.snapDegrees {
+                    angle = DriftArea.normalisedDegrees(nearestRight)
+                    if lastSnappedAngle != angle {
+                        lastSnappedAngle = angle
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
+                } else {
+                    lastSnappedAngle = nil
+                }
+                var rotated = current
+                rotated.rotationDegrees = DriftArea.normalisedDegrees(angle)
+                self.area = rotated
+            }
+            .onEnded { _ in lastSnappedAngle = nil }
     }
 }

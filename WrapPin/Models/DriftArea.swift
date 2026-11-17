@@ -3,7 +3,9 @@ import Foundation
 // Area drift: keep the simulated location moving inside a user-drawn box.
 // Pure Foundation so scripts/test-area-drift.swift can compile it alone.
 
-/// A north-up rectangle on the map, stored as a centre plus its size.
+/// A rectangle on the map, stored as a centre, a size and a rotation.
+/// Local axes: x runs along the width, y along the height; with no rotation
+/// x points east and y points north.
 struct DriftArea: Codable, Equatable, Identifiable, Sendable {
     static let minimumSideMetres: Double = 10
     static let maximumSideMetres: Double = 20_000
@@ -16,7 +18,28 @@ struct DriftArea: Codable, Equatable, Identifiable, Sendable {
     var widthMetres: Double
     /// North–south extent.
     var heightMetres: Double
+    /// Clockwise from north, in degrees, normalised to 0..<360.
+    var rotationDegrees: Double
     var createdAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, centerLatitude, centerLongitude, widthMetres, heightMetres, rotationDegrees, createdAt
+    }
+
+    /// Areas saved before rotation existed decode as north-up.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        centerLatitude = try container.decode(Double.self, forKey: .centerLatitude)
+        centerLongitude = try container.decode(Double.self, forKey: .centerLongitude)
+        widthMetres = Self.clampSide(try container.decode(Double.self, forKey: .widthMetres))
+        heightMetres = Self.clampSide(try container.decode(Double.self, forKey: .heightMetres))
+        rotationDegrees = Self.normalisedDegrees(
+            try container.decodeIfPresent(Double.self, forKey: .rotationDegrees) ?? 0
+        )
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+    }
 
     init(
         id: UUID = UUID(),
@@ -25,6 +48,7 @@ struct DriftArea: Codable, Equatable, Identifiable, Sendable {
         centerLongitude: Double,
         widthMetres: Double,
         heightMetres: Double,
+        rotationDegrees: Double = 0,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -33,27 +57,33 @@ struct DriftArea: Codable, Equatable, Identifiable, Sendable {
         self.centerLongitude = centerLongitude
         self.widthMetres = Self.clampSide(widthMetres)
         self.heightMetres = Self.clampSide(heightMetres)
+        self.rotationDegrees = Self.normalisedDegrees(rotationDegrees)
         self.createdAt = createdAt
     }
 
-    /// Builds the box spanned by two opposite corners.
+    /// Builds the box spanned by two opposite corners, keeping `rotationDegrees`.
     init(
         id: UUID = UUID(),
         name: String,
         corner a: (latitude: Double, longitude: Double),
         corner b: (latitude: Double, longitude: Double),
+        rotationDegrees: Double = 0,
         createdAt: Date = Date()
     ) {
-        let centerLatitude = (a.latitude + b.latitude) / 2
-        let centerLongitude = (a.longitude + b.longitude) / 2
-        let metresPerDegreeLongitude = DriftGeometry.metresPerDegreeLongitude(at: centerLatitude)
+        // Work in metres around corner a, then measure along the box's axes.
+        let metresPerDegreeLongitude = DriftGeometry.metresPerDegreeLongitude(at: a.latitude)
+        let east = (b.longitude - a.longitude) * metresPerDegreeLongitude
+        let north = (b.latitude - a.latitude) * DriftGeometry.metresPerDegreeLatitude
+        let local = DriftGeometry.toLocal(east: east, north: north, rotationDegrees: rotationDegrees)
+        let middle = DriftGeometry.toWorld(x: local.x / 2, y: local.y / 2, rotationDegrees: rotationDegrees)
         self.init(
             id: id,
             name: name,
-            centerLatitude: centerLatitude,
-            centerLongitude: centerLongitude,
-            widthMetres: abs(a.longitude - b.longitude) * metresPerDegreeLongitude,
-            heightMetres: abs(a.latitude - b.latitude) * DriftGeometry.metresPerDegreeLatitude,
+            centerLatitude: a.latitude + middle.north / DriftGeometry.metresPerDegreeLatitude,
+            centerLongitude: a.longitude + middle.east / metresPerDegreeLongitude,
+            widthMetres: abs(local.x),
+            heightMetres: abs(local.y),
+            rotationDegrees: rotationDegrees,
             createdAt: createdAt
         )
     }
@@ -71,20 +101,29 @@ struct DriftArea: Codable, Equatable, Identifiable, Sendable {
         ]
     }
 
-    /// Local east/north offset in metres → coordinate.
+    /// Box-local offset in metres → coordinate.
     func coordinate(x: Double, y: Double) -> (latitude: Double, longitude: Double) {
-        (
-            centerLatitude + y / DriftGeometry.metresPerDegreeLatitude,
-            centerLongitude + x / DriftGeometry.metresPerDegreeLongitude(at: centerLatitude)
+        let world = DriftGeometry.toWorld(x: x, y: y, rotationDegrees: rotationDegrees)
+        return (
+            centerLatitude + world.north / DriftGeometry.metresPerDegreeLatitude,
+            centerLongitude + world.east / DriftGeometry.metresPerDegreeLongitude(at: centerLatitude)
         )
     }
 
-    /// Coordinate → local east/north offset in metres.
+    /// Coordinate → box-local offset in metres.
     func offset(latitude: Double, longitude: Double) -> (x: Double, y: Double) {
-        (
-            (longitude - centerLongitude) * DriftGeometry.metresPerDegreeLongitude(at: centerLatitude),
-            (latitude - centerLatitude) * DriftGeometry.metresPerDegreeLatitude
+        DriftGeometry.toLocal(
+            east: (longitude - centerLongitude) * DriftGeometry.metresPerDegreeLongitude(at: centerLatitude),
+            north: (latitude - centerLatitude) * DriftGeometry.metresPerDegreeLatitude,
+            rotationDegrees: rotationDegrees
         )
+    }
+
+    /// Bearing (clockwise from north) from the centre to a coordinate.
+    func bearingDegrees(to latitude: Double, longitude: Double) -> Double {
+        let east = (longitude - centerLongitude) * DriftGeometry.metresPerDegreeLongitude(at: centerLatitude)
+        let north = (latitude - centerLatitude) * DriftGeometry.metresPerDegreeLatitude
+        return Self.normalisedDegrees(atan2(east, north) * 180 / .pi)
     }
 
     func contains(x: Double, y: Double, tolerance: Double = 0.001) -> Bool {
@@ -102,6 +141,12 @@ struct DriftArea: Codable, Equatable, Identifiable, Sendable {
         )
     }
 
+    static func normalisedDegrees(_ value: Double) -> Double {
+        guard value.isFinite else { return 0 }
+        let remainder = value.truncatingRemainder(dividingBy: 360)
+        return remainder < 0 ? remainder + 360 : remainder
+    }
+
     static func clampSide(_ value: Double) -> Double {
         guard value.isFinite else { return minimumSideMetres }
         return min(max(value, minimumSideMetres), maximumSideMetres)
@@ -113,6 +158,18 @@ enum DriftGeometry {
 
     static func metresPerDegreeLongitude(at latitude: Double) -> Double {
         max(111_320.0 * cos(latitude * .pi / 180), 1)
+    }
+
+    /// Box-local (x along width, y along height) → east/north, rotating
+    /// clockwise by `rotationDegrees`.
+    static func toWorld(x: Double, y: Double, rotationDegrees: Double) -> (east: Double, north: Double) {
+        let angle = rotationDegrees * .pi / 180
+        return (x * cos(angle) + y * sin(angle), -x * sin(angle) + y * cos(angle))
+    }
+
+    static func toLocal(east: Double, north: Double, rotationDegrees: Double) -> (x: Double, y: Double) {
+        let angle = rotationDegrees * .pi / 180
+        return (east * cos(angle) - north * sin(angle), east * sin(angle) + north * cos(angle))
     }
 }
 
