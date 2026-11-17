@@ -104,7 +104,8 @@ struct AreaDriftCheck {
         let decoded = try JSONDecoder().decode([DriftArea].self, from: data)
         precondition(decoded == areas)
         let settingsData = try JSONEncoder().encode(safe)
-        precondition(try JSONDecoder().decode(DriftSettings.self, from: settingsData) == safe)
+        let decodedSettings = try JSONDecoder().decode(DriftSettings.self, from: settingsData)
+        precondition(decodedSettings == safe)
 
         print("Area drift checks passed.")
     }
