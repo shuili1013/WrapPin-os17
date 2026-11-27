@@ -8,6 +8,10 @@ final class AppModel {
     private static let onboardingKey = "hasCompletedOnboarding"
     private static let favouritesKey = "favouriteLocations"
     private static let savedDriftAreasKey = "savedDriftAreas"
+    private static let scheduleEntriesKey = "locationScheduleEntries"
+    private static let scheduleEnabledKey = "locationScheduleEnabled"
+    private static let scheduleBaselineKey = "locationScheduleBaseline"
+    private static let scheduleLastAppliedKey = "locationScheduleLastApplied"
     private static let driftSettingsKey = "driftSettings"
     private static let hasSeenFavouriteReorderHintKey = "hasSeenFavouriteReorderHint"
     private static let historyKey = "locationHistory"
@@ -31,6 +35,13 @@ final class AppModel {
     private(set) var selectedTarget: LocationTarget?
     private(set) var favouriteLocations: [LocationTarget]
     private(set) var savedDriftAreas: [DriftArea]
+    private(set) var scheduleEntries: [ScheduleEntry]
+    private(set) var isScheduleEnabled: Bool
+    /// Firings at or before this moment are never applied retroactively.
+    private(set) var scheduleBaseline: Date?
+    private(set) var lastAppliedScheduleOccurrence: ScheduleOccurrence?
+    /// A schedule step asked for by the Shortcuts actions; HomeView runs it.
+    var scheduleRunRequest: ScheduleRunRequest?
     private(set) var driftSettings: DriftSettings
     private(set) var hasSeenFavouriteReorderHint: Bool
     private(set) var locationHistory: [LocationTarget]
@@ -106,6 +117,12 @@ final class AppModel {
         self.hasSeenFavouriteReorderHint = preferences.bool(forKey: Self.hasSeenFavouriteReorderHintKey)
         self.locationHistory = Self.locations(forKey: Self.historyKey, in: preferences)
         self.savedDriftAreas = Self.decoded([DriftArea].self, forKey: Self.savedDriftAreasKey, in: preferences) ?? []
+        self.scheduleEntries = Self.decoded([ScheduleEntry].self, forKey: Self.scheduleEntriesKey, in: preferences) ?? []
+        self.isScheduleEnabled = preferences.bool(forKey: Self.scheduleEnabledKey)
+        self.scheduleBaseline = preferences.object(forKey: Self.scheduleBaselineKey) as? Date
+        self.lastAppliedScheduleOccurrence = Self.decoded(
+            ScheduleOccurrence.self, forKey: Self.scheduleLastAppliedKey, in: preferences
+        )
         self.driftSettings = (Self.decoded(DriftSettings.self, forKey: Self.driftSettingsKey, in: preferences)
             ?? DriftSettings()).sanitised()
         self.coordinateModeMemory = Self.coordinateModeMemory(in: preferences)
@@ -282,6 +299,89 @@ final class AppModel {
         preferences.removeObject(forKey: Self.favouritesKey)
         WrapPinShortcuts.updateAppShortcutParameters()
         saveCoordinateModeMemory()
+    }
+
+    // MARK: Location schedule
+
+    /// Adds a new entry or replaces the one with the same ID, keeping the list
+    /// sorted by time of day.
+    func saveScheduleEntry(_ entry: ScheduleEntry) {
+        if let index = scheduleEntries.firstIndex(where: { $0.id == entry.id }) {
+            scheduleEntries[index] = entry
+        } else {
+            scheduleEntries.append(entry)
+        }
+        scheduleEntries.sort { $0.minutesSinceMidnight < $1.minutesSinceMidnight }
+        scheduleDidChange()
+    }
+
+    func deleteScheduleEntries(withIDs ids: Set<UUID>) {
+        scheduleEntries.removeAll { ids.contains($0.id) }
+        scheduleDidChange()
+    }
+
+    func setScheduleEntry(id: UUID, enabled: Bool) {
+        guard let index = scheduleEntries.firstIndex(where: { $0.id == id }) else { return }
+        scheduleEntries[index].isEnabled = enabled
+        scheduleDidChange()
+    }
+
+    func setScheduleEnabled(_ enabled: Bool) {
+        isScheduleEnabled = enabled
+        preferences.set(enabled, forKey: Self.scheduleEnabledKey)
+        if enabled { resetScheduleBaseline() }
+    }
+
+    func scheduleEntry(withID id: UUID) -> ScheduleEntry? {
+        scheduleEntries.first { $0.id == id }
+    }
+
+    /// The step that should run now, if any.
+    func dueScheduleOccurrence(now: Date = Date()) -> ScheduleOccurrence? {
+        guard isScheduleEnabled else { return nil }
+        return ScheduleResolver.dueOccurrence(
+            in: scheduleEntries,
+            now: now,
+            lastApplied: lastAppliedScheduleOccurrence,
+            baseline: scheduleBaseline
+        )
+    }
+
+    /// The latest step at or before now, applied or not.
+    func currentScheduleOccurrence(now: Date = Date()) -> ScheduleOccurrence? {
+        guard isScheduleEnabled else { return nil }
+        let occurrence = ScheduleResolver.mostRecentOccurrence(in: scheduleEntries, atOrBefore: now)
+        if let occurrence, let scheduleBaseline, occurrence.date <= scheduleBaseline,
+           occurrence != lastAppliedScheduleOccurrence {
+            return nil
+        }
+        return occurrence
+    }
+
+    func nextScheduleOccurrence(after now: Date = Date()) -> ScheduleOccurrence? {
+        guard isScheduleEnabled else { return nil }
+        return ScheduleResolver.nextOccurrence(in: scheduleEntries, after: now)
+    }
+
+    func markScheduleApplied(_ occurrence: ScheduleOccurrence) {
+        lastAppliedScheduleOccurrence = occurrence
+        if let data = try? JSONEncoder().encode(occurrence) {
+            preferences.set(data, forKey: Self.scheduleLastAppliedKey)
+        }
+    }
+
+    private func scheduleDidChange() {
+        if let data = try? JSONEncoder().encode(scheduleEntries) {
+            preferences.set(data, forKey: Self.scheduleEntriesKey)
+        }
+        resetScheduleBaseline()
+    }
+
+    /// Editing or switching on the schedule must not replay earlier steps.
+    private func resetScheduleBaseline() {
+        let now = Date()
+        scheduleBaseline = now
+        preferences.set(now, forKey: Self.scheduleBaselineKey)
     }
 
     // MARK: Area drift

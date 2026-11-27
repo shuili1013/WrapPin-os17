@@ -53,6 +53,8 @@ struct WrapPinActivityAttributes: ActivityAttributes {
         var startedAt: Date
         var route: RouteProgress?
         var drift: DriftStatus?
+        /// "08:30 → Office", when a location schedule is on.
+        var nextSchedule: String?
     }
 
     /// Identifies one location session; not shown to the user.

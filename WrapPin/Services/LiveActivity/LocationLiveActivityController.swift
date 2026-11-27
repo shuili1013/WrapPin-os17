@@ -27,6 +27,11 @@ final class LocationLiveActivityController {
         RouteProgressBoard.shared.onChange = { [weak self] route in
             self?.routeProgressChanged(route)
         }
+        RouteProgressBoard.shared.onNextScheduleChange = { [weak self] text in
+            guard let self, var state = self.lastState else { return }
+            state.nextSchedule = text
+            self.show(state)
+        }
         RouteProgressBoard.shared.onDriftChange = { [weak self] drift in
             guard let self, var state = self.lastState else { return }
             state.drift = drift
@@ -59,7 +64,8 @@ final class LocationLiveActivityController {
                 status: .active,
                 startedAt: startedAt ?? Date(),
                 route: RouteProgressBoard.shared.current,
-                drift: RouteProgressBoard.shared.currentDrift
+                drift: RouteProgressBoard.shared.currentDrift,
+                nextSchedule: RouteProgressBoard.shared.nextSchedule
             ))
         case .openingLocalDevVPN, .discovering, .connecting:
             // Only an already-running session shows reconnecting.
@@ -95,6 +101,7 @@ final class LocationLiveActivityController {
             || previous?.route?.isPaused != state.route?.isPaused
             || previous?.route?.hasArrived != state.route?.hasArrived
             || previous?.drift != state.drift
+            || previous?.nextSchedule != state.nextSchedule
             || (previous?.route == nil) != (state.route == nil)
         let elapsed = Date().timeIntervalSince(lastPushDate)
         if isImportant || elapsed >= minimumRoutineInterval {

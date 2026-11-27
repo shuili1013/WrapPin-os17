@@ -139,6 +139,17 @@ private struct LockScreenView: View {
             if let route = state.route {
                 RouteProgressRow(route: route, compact: true)
             }
+
+            if let next = state.nextSchedule {
+                Label {
+                    Text(verbatim: next)
+                        .lineLimit(1)
+                } icon: {
+                    Image(systemName: "calendar.badge.clock")
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.75))
+            }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)

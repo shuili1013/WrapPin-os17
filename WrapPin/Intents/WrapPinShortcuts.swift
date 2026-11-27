@@ -22,6 +22,24 @@ struct WrapPinShortcuts: AppShortcutsProvider {
             shortTitle: "Restore Real Location",
             systemImageName: "location.slash"
         )
+        AppShortcut(
+            intent: RunLocationScheduleIntent(),
+            phrases: [
+                "Run the \(.applicationName) schedule",
+                "Apply my \(.applicationName) schedule"
+            ],
+            shortTitle: "Run Schedule",
+            systemImageName: "calendar.badge.clock"
+        )
+        AppShortcut(
+            intent: KeepWrapPinAliveIntent(),
+            phrases: [
+                "Keep \(.applicationName) alive",
+                "Wake up \(.applicationName)"
+            ],
+            shortTitle: "Keep Alive",
+            systemImageName: "bolt.heart"
+        )
     }
 
     static let shortcutTileColor: ShortcutTileColor = .blue

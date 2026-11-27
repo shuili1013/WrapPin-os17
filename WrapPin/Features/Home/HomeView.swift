@@ -15,6 +15,9 @@ struct HomeView: View {
     /// Non-nil while area drift is open (editing the box or drifting).
     @State private var driftDraft: DriftArea?
     @State private var isShowingSavedDriftAreas = false
+    @State private var isShowingSchedule = false
+    /// Re-evaluated every few seconds so the next-step chip stays current.
+    @State private var scheduleClock = Date()
     /// Bumped on camera changes while editing so the box handles follow. Kept
     /// in its own observable so only the handles redraw during a pan.
     @State private var driftEditorCamera = DriftEditorCamera()
@@ -113,6 +116,19 @@ struct HomeView: View {
         .onChange(of: appModel.shortcutRequest?.id, initial: true) {
             handleShortcutRequest()
         }
+        .onChange(of: appModel.scheduleRunRequest?.id, initial: true) {
+            handleScheduleRunRequest()
+        }
+        .task {
+            // Runs while WrapPin is alive, including in the background during a
+            // session (kept alive by background location).
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                scheduleClock = Date()
+                runDueScheduleStepIfNeeded()
+                publishNextScheduleToLiveActivity()
+            }
+        }
         .onChange(of: appModel.deviceSession.phase) { oldPhase, newPhase in
             walkingSimulation.handleDeviceSessionPhase(
                 newPhase,
@@ -206,6 +222,10 @@ struct HomeView: View {
                 frameCamera(on: area)
             }
             .environment(appModel)
+        }
+        .sheet(isPresented: $isShowingSchedule) {
+            ScheduleView(currentSelection: mapModel.selectedLocation)
+                .environment(appModel)
         }
         .sheet(isPresented: $isShowingSettings) {
             SettingsView()
@@ -578,6 +598,21 @@ struct HomeView: View {
                     .accessibilityLabel("Favourites and history")
 
                     Button {
+                        isShowingSchedule = true
+                    } label: {
+                        Image(systemName: appModel.isScheduleEnabled ? "calendar.badge.clock" : "calendar")
+                            .font(.system(size: min(mapControlSymbolSize, 24), weight: .semibold))
+                            .foregroundStyle(appModel.isScheduleEnabled ? Color.purple : Color.primary)
+                            .contentTransition(.symbolEffect(.replace))
+                            .frame(width: 36, height: 36)
+                            .background(.regularMaterial, in: Circle())
+                            .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel("Location Schedule")
+
+                    Button {
                         isShowingSettings = true
                     } label: {
                         Image(systemName: "gearshape.fill")
@@ -590,6 +625,26 @@ struct HomeView: View {
                     }
                     .buttonStyle(.pressable)
                     .accessibilityLabel("Settings")
+                }
+            }
+
+            if let nextScheduleText {
+                HStack {
+                    Button {
+                        isShowingSchedule = true
+                    } label: {
+                        Label(nextScheduleText, systemImage: "calendar.badge.clock")
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                            .foregroundStyle(.purple)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(.regularMaterial, in: Capsule())
+                            .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
+                    }
+                    .buttonStyle(.pressable)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    Spacer()
                 }
             }
 
@@ -1094,6 +1149,165 @@ struct HomeView: View {
             mode: walkingRoutePlanner.mode,
             coordinateMode: walkingSimulation.coordinateMode
         )
+    }
+
+    // MARK: Location schedule
+
+    private var nextScheduleText: String? {
+        _ = scheduleClock
+        guard
+            let next = appModel.nextScheduleOccurrence(),
+            let entry = appModel.scheduleEntry(withID: next.entryID)
+        else { return nil }
+        let label = appModel.scheduleLabel(for: entry)
+        if Calendar.current.isDateInToday(next.date) {
+            return label
+        }
+        let day = next.date.formatted(.dateTime.weekday(.abbreviated))
+        return "\(day) \(label)"
+    }
+
+    private func publishNextScheduleToLiveActivity() {
+        RouteProgressBoard.shared.publishNextSchedule(nextScheduleText)
+    }
+
+    private func runDueScheduleStepIfNeeded() {
+        guard let occurrence = appModel.dueScheduleOccurrence() else { return }
+        // Wait for a connection that is still being set up; try on the next tick.
+        guard !appModel.deviceSession.isBusy, !appModel.isStartingLocationSession else { return }
+        performScheduledStep(occurrence)
+    }
+
+    private func handleScheduleRunRequest() {
+        guard let request = appModel.takeScheduleRunRequest() else { return }
+        isShowingSettings = false
+        isShowingSavedPlaces = false
+        switch request.reason {
+        case .runSchedule:
+            if let occurrence = appModel.currentScheduleOccurrence() {
+                performScheduledStep(occurrence, force: true)
+            }
+        case .keepAlive:
+            if let due = appModel.dueScheduleOccurrence() {
+                performScheduledStep(due)
+            } else if !appModel.isSimulationLive {
+                if let recovery = appModel.interruptedSession {
+                    resumeInterruptedSession(recovery)
+                } else if let occurrence = appModel.currentScheduleOccurrence() {
+                    performScheduledStep(occurrence, force: true)
+                }
+            }
+        }
+    }
+
+    /// Runs one schedule step with the same code paths as the buttons.
+    /// `force` re-runs a step that was already applied (for example after the
+    /// session was lost); a route that already ran is then resumed as a fixed
+    /// location at its destination instead of walking it again.
+    private func performScheduledStep(_ occurrence: ScheduleOccurrence, force: Bool = false) {
+        let alreadyApplied = occurrence == appModel.lastAppliedScheduleOccurrence
+        guard !alreadyApplied || force else { return }
+        appModel.markScheduleApplied(occurrence)
+        guard let entry = appModel.scheduleEntry(withID: occurrence.entryID) else { return }
+
+        switch entry.action {
+        case .place(let target):
+            startScheduledPlace(target)
+        case .drift(let areaID, _):
+            guard let area = appModel.savedDriftAreas.first(where: { $0.id == areaID }) else { return }
+            if alreadyApplied, driftController.isRunning { return }
+            stopRouteSimulationForSchedule()
+            if driftController.isRunning { driftController.stopDrifting() }
+            withAnimation(reduceMotion ? nil : MapAnimation.panel) { driftDraft = area }
+            frameCamera(on: area)
+            Task {
+                await driftController.start(
+                    area: area,
+                    settings: appModel.driftSettings,
+                    coordinateMode: appModel.coordinateMode(for: LocationTarget(
+                        name: area.name, subtitle: "",
+                        latitude: area.centerLatitude, longitude: area.centerLongitude
+                    )),
+                    using: appModel
+                )
+            }
+        case .route(let scheduledMode, let destination):
+            if alreadyApplied {
+                // Do not walk the same route twice; stay at its destination.
+                if !walkingSimulation.locksDestination { startScheduledPlace(destination) }
+                return
+            }
+            startScheduledRoute(to: destination, mode: scheduledMode == .walking ? .walking : .driving)
+        case .restore:
+            guard appModel.isSimulationLive else { return }
+            shouldClearLocationAfterRestoration = true
+            if walkingSimulation.locksDestination {
+                walkingSimulation.stop(using: appModel.deviceSession)
+            } else if driftController.isRunning {
+                driftController.stop(using: appModel.deviceSession)
+            } else {
+                appModel.stopLocationSession()
+            }
+        }
+    }
+
+    private func startScheduledPlace(_ target: LocationTarget) {
+        stopRouteSimulationForSchedule()
+        closeDriftForSchedule()
+        shouldRefreshRealLocationWhenActive = false
+        mapModel.show(target)
+        Task {
+            await appModel.startLocationSession(
+                at: target,
+                coordinateMode: appModel.coordinateMode(for: target)
+            )
+        }
+    }
+
+    private func startScheduledRoute(to destination: LocationTarget, mode: RouteMode) {
+        closeDriftForSchedule()
+        // Start from where this iPhone currently appears to be.
+        let source: LocationTarget? = if case .active(let current) = appModel.deviceSession.phase {
+            current
+        } else {
+            nil
+        }
+        stopRouteSimulationForSchedule()
+        shouldRefreshRealLocationWhenActive = false
+        Task {
+            guard let route = await walkingRoutePlanner.preview(
+                to: destination,
+                from: source,
+                mode: mode,
+                includingAlternatives: false
+            ) else { return }
+            walkingSimulation.prepare(
+                route: route,
+                destination: destination,
+                mode: mode,
+                coordinateMode: appModel.coordinateMode(for: destination)
+            )
+            mapModel.show(walkingRoutePlanner.routes)
+            followsSimulatedLocation = mode == .driving
+            await walkingSimulation.start(using: appModel)
+        }
+    }
+
+    /// Ends a running route but keeps the session (the next step takes over).
+    private func stopRouteSimulationForSchedule() {
+        guard walkingSimulation.locksDestination || walkingRoutePlanner.route != nil else { return }
+        walkingSimulation.reset()
+        walkingRoutePlanner.clear()
+    }
+
+    private func closeDriftForSchedule() {
+        if driftController.isRunning { driftController.stopDrifting() }
+        if driftDraft != nil {
+            withAnimation(reduceMotion ? nil : MapAnimation.panel) {
+                driftController.reset()
+                driftDraft = nil
+            }
+        }
     }
 
     // MARK: Area drift

@@ -16,6 +16,15 @@ final class RouteProgressBoard {
         onChange?(progress)
     }
 
+    private(set) var nextSchedule: String?
+    var onNextScheduleChange: ((String?) -> Void)?
+
+    func publishNextSchedule(_ text: String?) {
+        guard text != nextSchedule else { return }
+        nextSchedule = text
+        onNextScheduleChange?(text)
+    }
+
     private(set) var currentDrift: WrapPinActivityAttributes.DriftStatus?
     var onDriftChange: ((WrapPinActivityAttributes.DriftStatus?) -> Void)?
 

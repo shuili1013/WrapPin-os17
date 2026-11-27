@@ -3,3 +3,7 @@
 "Simulate ${place} with ${applicationName}" = "用${applicationName}模拟${place}";
 "Restore my real location with ${applicationName}" = "用${applicationName}恢复真实位置";
 "Stop ${applicationName} simulation" = "停止${applicationName}模拟";
+"Run the ${applicationName} schedule" = "执行${applicationName}排程";
+"Apply my ${applicationName} schedule" = "套用${applicationName}排程";
+"Keep ${applicationName} alive" = "让${applicationName}保持运行";
+"Wake up ${applicationName}" = "唤醒${applicationName}";

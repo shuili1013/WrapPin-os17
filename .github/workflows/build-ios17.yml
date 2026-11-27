@@ -46,6 +46,10 @@ jobs:
           xcrun swiftc -parse-as-library scripts/test-area-drift.swift \
             WrapPin/Models/DriftArea.swift -o /tmp/drift-check
           /tmp/drift-check
+          xcrun swiftc -parse-as-library scripts/test-location-schedule.swift \
+            WrapPin/Models/LocationSchedule.swift WrapPin/Models/LocationTarget.swift \
+            -o /tmp/schedule-check
+          /tmp/schedule-check
           xcrun swiftc -parse-as-library scripts/check-fixed-coordinate-mode.swift \
             WrapPin/Services/FixedCoordinateMode.swift WrapPin/Models/LocationTarget.swift \
             WrapPin/Models/SessionRecoveryRecord.swift WrapPin/Models/CoordinateModeMemory.swift \
